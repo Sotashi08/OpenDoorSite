@@ -6,9 +6,8 @@
 // ===== THEME SYSTEM =====
 const THEMES = {
     expressive: { name: 'Expressive', icon: '🎨', description: 'Material 3 Expressive — vibrant & dynamic' },
-    cyber: { name: 'Cyber', icon: '💻', description: 'Dark developer theme with neon accents' },
-    minimal: { name: 'Minimal', icon: '✨', description: 'Clean & focused minimal design' },
-    darkExpressive: { name: 'Dark Expressive', icon: '🌙', description: 'Expressive design in dark mode' }
+    ember: { name: 'Ember', icon: '🌙', description: 'Warm dark expressive — calm & readable' },
+    paper: { name: 'Paper', icon: '📄', description: 'Warm light theme with ink-like contrast' }
 };
 
 class ThemeManager {
@@ -18,6 +17,13 @@ class ThemeManager {
     }
 
     applyTheme(themeId) {
+        // Migrate removed theme ids to closest match
+        if (themeId === 'sunset') themeId = 'ember';
+        if (themeId === 'dark-expressive' || themeId === 'cyber' || themeId === 'midnight' || themeId === 'aurora' || themeId === 'forest') {
+            themeId = 'ember';
+        }
+        if (themeId === 'minimal') themeId = 'paper';
+        if (!THEMES[themeId]) themeId = 'expressive';
         document.documentElement.setAttribute('data-theme', themeId);
         localStorage.setItem('safeCodeTheme', themeId);
         this.currentTheme = themeId;
@@ -279,6 +285,7 @@ const TaskRenderer = {
         GameState.answered = false;
         GameState.selectedLine = null;
         GameState.selectedAnswer = null;
+        GameState.currentHints = 0;
 
         // Show game view, hide result
         gameView.classList.remove('hidden');
@@ -294,12 +301,16 @@ const TaskRenderer = {
         // Reset UI elements
         UI.get('hintBox').classList.add('hidden');
         UI.get('hintBox').innerHTML = '';
+        delete UI.get('hintBox').dataset.hint1;
+        delete UI.get('hintBox').dataset.hint2;
         UI.get('feedbackBox').className = 'feedback-box';
         UI.get('feedbackBox').innerHTML = '';
         UI.get('nextBtn').disabled = true;
         UI.get('nextBtn').textContent = GameState.currentIndex === GameState.deck.length - 1 ? 'Финиш' : 'Следующее';
         UI.get('checkBtn').classList.toggle('hidden', task.mode !== 'line');
         UI.get('checkBtn').disabled = true;
+        UI.get('hintBtn1').disabled = false;
+        UI.get('hintBtn2').disabled = false;
 
         // Render code block
         this.renderCode(task);
@@ -331,14 +342,22 @@ const TaskRenderer = {
             const isSelectable = task.mode === 'line';
             const ariaLabel = isSelectable ? `Строка ${lineNum}: ${escapeHtml(line)}` : '';
 
-            return `
-        <button class="code-line ${isSelectable ? 'selectable' : 'static'}"
-                type="${isSelectable ? 'button' : 'div'}"
-                ${isSelectable ? `data-line="${lineNum}" tabindex="0"` : ''}
-                ${isSelectable ? `aria-label="${ariaLabel}"` : ''}>
+            if (isSelectable) {
+                return `
+        <button class="code-line selectable" type="button"
+                data-line="${lineNum}" tabindex="0"
+                aria-label="${ariaLabel}">
           <span class="ln">${lineNum}</span>
           <span class="txt">${this.syntaxHighlight(line)}</span>
         </button>
+      `;
+            }
+
+            return `
+        <div class="code-line static" aria-hidden="true">
+          <span class="ln">${lineNum}</span>
+          <span class="txt">${this.syntaxHighlight(line)}</span>
+        </div>
       `;
         }).join('');
 
@@ -357,12 +376,18 @@ const TaskRenderer = {
     },
 
     syntaxHighlight(code) {
-        // Simple syntax highlighting for pseudo-code
-        return escapeHtml(code)
-            .replace(/\b(if|else|while|for|return|def|class|import|from)\b/g, '<span class="kw">$1</span>')
-            .replace(/(["'])(?:\\.|[^\\])*?\1/g, '<span class="str">$&</span>')
-            .replace(/\b(\w+)\s*\(/g, '<span class="fn">$1</span>(')
-            .replace(/(#|\/\/).*/g, '<span class="cmt">$&</span>');
+        // Single-pass highlighter (avoids breaking injected HTML)
+        const src = escapeHtml(code);
+        const re = /(\/\/.*|#.*)|(["'])(?:\\.|(?!\2).)*\2|\b(if|else|while|for|return|def|class|import|from)\b|\b(\w+)(?=\s*\()|\b(\d+)\b|([=+\-*/<>!]=?|&&|\|\|)/g;
+        return src.replace(re, (m, comment, _q, kw, fn, num, op) => {
+            if (comment) return `<span class="cmt">${comment}</span>`;
+            if (m[0] === '"' || m[0] === "'") return `<span class="str">${m}</span>`;
+            if (kw) return `<span class="kw">${kw}</span>`;
+            if (fn) return `<span class="fn">${fn}</span>`;
+            if (num) return `<span class="num">${num}</span>`;
+            if (op) return `<span class="op">${op}</span>`;
+            return m;
+        });
     },
 
     renderOptions(task) {
@@ -582,13 +607,34 @@ function setupEventListeners() {
 
     // Restart buttons
     const restartHandler = () => {
-        if (confirm('Начать заново? Текущий прогресс будет сброшен.')) {
-            startNewGame();
-        }
+        const modal = document.getElementById('restartModal');
+        if (!modal) return startNewGame();
+        modal.classList.add('show');
+        modal.setAttribute('aria-hidden', 'false');
+        document.getElementById('restartConfirm')?.focus();
     };
 
     UI.get('restartBtn')?.addEventListener('click', restartHandler);
     UI.get('againBtn')?.addEventListener('click', restartHandler);
+
+    // Restart modal actions
+    const closeRestartModal = () => {
+        const modal = document.getElementById('restartModal');
+        if (!modal) return;
+        modal.classList.remove('show');
+        modal.setAttribute('aria-hidden', 'true');
+    };
+    document.getElementById('restartCancel')?.addEventListener('click', closeRestartModal);
+    document.getElementById('restartBackdrop')?.addEventListener('click', closeRestartModal);
+    document.getElementById('restartConfirm')?.addEventListener('click', () => {
+        closeRestartModal();
+        startNewGame();
+    });
+    document.addEventListener('keydown', (e) => {
+        const modal = document.getElementById('restartModal');
+        if (!modal?.classList.contains('show')) return;
+        if (e.key === 'Escape') closeRestartModal();
+    });
 
     // Hint buttons
     UI.get('hintBtn1')?.addEventListener('click', () => HintSystem.showHint(1));
@@ -614,8 +660,25 @@ function setupEventListeners() {
 
     // Scan button (demo)
     UI.get('scanBtn')?.addEventListener('click', () => {
-        UI.showToast('Диагностика: Все системы в норме ✓', 'success');
-        UI.logConsole('🔍 Диагностика завершена: уязвимостей не обнаружено');
+        const btn = UI.get('scanBtn');
+        if (!btn || btn.classList.contains('scanning')) return;
+
+        btn.classList.add('scanning');
+        btn.disabled = true;
+        document.documentElement.classList.add('scanning');
+
+        UI.showToast('Диагностика: сканирование...', 'info');
+        UI.logConsole('🔎 Диагностика: запуск сканирования...');
+
+        clearTimeout(UI._scanTimer);
+        UI._scanTimer = setTimeout(() => {
+            btn.classList.remove('scanning');
+            btn.disabled = false;
+            document.documentElement.classList.remove('scanning');
+
+            UI.showToast('Диагностика: Все системы в норме ✓', 'success');
+            UI.logConsole('🔍 Диагностика завершена: уязвимостей не обнаружено');
+        }, 1400);
     });
 
     // Keyboard navigation
@@ -681,6 +744,7 @@ function renderFileTabs() {
 function startNewGame() {
     // Reset game state
     GameState.reset();
+    GameState.currentHints = 0;
 
     // Start timer
     GameState.startTimer(() => UI.updateStats());

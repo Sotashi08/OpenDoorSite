@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SafeCode Lab — интерактивная игра по ИБ</title>
-    <link rel="stylesheet" href="css/style.css" />
+    <link rel="stylesheet" href="css/style.css"/>
     <script defer src="js/script.js"></script>
 </head>
 <body>
@@ -45,7 +45,7 @@
             <div class="panel-title">Управление</div>
             <div class="control-stack">
                 <button class="soft-btn" id="scanBtn">Диагностика</button>
-                <button class="soft-btn" id="themeBtn">Режим фокуса</button>
+                <button class="soft-btn" id="themeBtn">Тема</button>
                 <button class="soft-btn danger" id="restartBtn">Начать заново</button>
             </div>
         </div>
@@ -53,34 +53,21 @@
 
     <main class="main">
         <header class="topbar card">
-            <div>
+            <div class="topbar-left">
                 <div class="eyebrow">Интерактивная игра по информационной безопасности</div>
                 <h1>Найди уязвимости в псевдокоде</h1>
+
+                <div class="topbar-intro" aria-label="Режим">
+                    <span class="mode-tag">Режим разработчика</span>
+                </div>
             </div>
-            <div class="topbar-badges">
-                <div class="pill" id="levelPill">Старт</div>
-                <div class="pill" id="progressPill">0 / 10</div>
+            <div class="topbar-right">
+                <div class="topbar-badges">
+                    <div class="pill" id="levelPill">Старт</div>
+                    <div class="pill" id="progressPill">0 / 10</div>
+                </div>
             </div>
         </header>
-
-        <section class="intro card">
-            <div class="intro-copy">
-                <h2>Режим разработчика</h2>
-                <p>
-                    Ты смотришь на код как начинающий разработчик. Задача простая:
-                    заметить риск, выбрать проблему и понять, как делать безопаснее.
-                </p>
-            </div>
-            <div class="progress-area">
-                <div class="progress-head">
-                    <span>Прогресс</span>
-                    <span id="progressText">0%</span>
-                </div>
-                <div class="progress-track">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-            </div>
-        </section>
 
         <section class="workspace">
             <article class="card task-card" id="taskCard">
@@ -95,12 +82,19 @@
 
                     <p class="task-question" id="taskQuestion"></p>
 
-                    <div class="code-shell">
+                    <div class="code-shell" role="region" aria-label="Код задания">
                         <div class="code-toolbar">
-                            <span>pseudo.py</span>
-                            <span id="taskMeta">Лёгкий уровень</span>
+                            <div class="code-toolbar-left">
+                                <span class="code-window-dots" aria-hidden="true">
+                                    <span class="dot dot-red"></span>
+                                    <span class="dot dot-yellow"></span>
+                                    <span class="dot dot-green"></span>
+                                </span>
+                                <span class="code-filename" aria-label="Имя файла">pseudo.py</span>
+                            </div>
+                            <span class="code-meta" id="taskMeta">Лёгкий уровень</span>
                         </div>
-                        <div class="code-block" id="codeBlock"></div>
+                        <div class="code-block" id="codeBlock" role="list"></div>
                     </div>
 
                     <div class="options" id="options"></div>
@@ -150,6 +144,19 @@
                     <div class="console" id="consoleBox"></div>
                 </div>
 
+                <div class="card progress-card">
+                    <div class="panel-title">Прогресс</div>
+                    <div class="progress-area">
+                        <div class="progress-head">
+                            <span>Сессия</span>
+                            <span id="progressText">0%</span>
+                        </div>
+                        <div class="progress-track">
+                            <div class="progress-fill" id="progressFill"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card note-card">
                     <div class="panel-title">Подсказка по игре</div>
                     <p>
@@ -162,5 +169,17 @@
     </main>
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<div class="modal" id="restartModal" aria-hidden="true" role="dialog" aria-label="Подтверждение перезапуска">
+    <div class="modal-backdrop" id="restartBackdrop" aria-hidden="true"></div>
+    <div class="modal-panel card" role="document">
+        <div class="panel-title">Начать заново?</div>
+        <p class="modal-text">Текущий прогресс будет сброшен.</p>
+        <div class="modal-actions">
+            <button class="soft-btn" id="restartCancel" type="button">Отмена</button>
+            <button class="soft-btn danger" id="restartConfirm" type="button">Сбросить</button>
+        </div>
+    </div>
+</div>
 </body>
 </html>
