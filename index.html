@@ -1,1 +1,166 @@
-<p>ПРИВЕТ</p>
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SafeCode Lab — интерактивная игра по ИБ</title>
+    <link rel="stylesheet" href="test.css" />
+    <script defer src="test.js"></script>
+</head>
+<body>
+<div id="bgFeed" aria-hidden="true"></div>
+
+<div class="shell">
+    <aside class="sidebar">
+        <div class="brand card">
+            <div class="brand-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2l8 4v6c0 5-3.2 8.9-8 10-4.8-1.1-8-5-8-10V6l8-4Z" stroke="currentColor" stroke-width="1.6" />
+                    <path d="M8.2 12.1 11 14.8l4.9-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+            </div>
+            <div>
+                <div class="brand-title">SafeCode Lab</div>
+                <div class="brand-subtitle">Cyber IDE challenge</div>
+            </div>
+        </div>
+
+        <div class="card mini-panel">
+            <div class="panel-title">Сессия</div>
+            <div class="mini-stats">
+                <div><span>Задания</span><strong id="taskCounter">0/10</strong></div>
+                <div><span>Очки</span><strong id="scoreCounter">0</strong></div>
+                <div><span>Время</span><strong id="timeCounter">00:00</strong></div>
+                <div><span>Подсказки</span><strong id="hintCounter">0</strong></div>
+            </div>
+        </div>
+
+        <div class="card mini-panel">
+            <div class="panel-title">Файлы проекта</div>
+            <div class="tabs" id="fileTabs"></div>
+            <div class="file-preview" id="filePreview"></div>
+        </div>
+
+        <div class="card mini-panel">
+            <div class="panel-title">Управление</div>
+            <div class="control-stack">
+                <button class="soft-btn" id="scanBtn">Диагностика</button>
+                <button class="soft-btn" id="themeBtn">Режим фокуса</button>
+                <button class="soft-btn danger" id="restartBtn">Начать заново</button>
+            </div>
+        </div>
+    </aside>
+
+    <main class="main">
+        <header class="topbar card">
+            <div>
+                <div class="eyebrow">Интерактивная игра по информационной безопасности</div>
+                <h1>Найди уязвимости в псевдокоде</h1>
+            </div>
+            <div class="topbar-badges">
+                <div class="pill" id="levelPill">Старт</div>
+                <div class="pill" id="progressPill">0 / 10</div>
+            </div>
+        </header>
+
+        <section class="intro card">
+            <div class="intro-copy">
+                <h2>Режим разработчика</h2>
+                <p>
+                    Ты смотришь на код как начинающий разработчик. Задача простая:
+                    заметить риск, выбрать проблему и понять, как делать безопаснее.
+                </p>
+            </div>
+            <div class="progress-area">
+                <div class="progress-head">
+                    <span>Прогресс</span>
+                    <span id="progressText">0%</span>
+                </div>
+                <div class="progress-track">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+            </div>
+        </section>
+
+        <section class="workspace">
+            <article class="card task-card" id="taskCard">
+                <div id="gameView">
+                    <div class="task-head">
+                        <div>
+                            <div class="chip" id="taskBadge">Задание 1/10</div>
+                            <h2 id="taskTitle">...</h2>
+                        </div>
+                        <div class="chip subtle" id="taskType">Тест</div>
+                    </div>
+
+                    <p class="task-question" id="taskQuestion"></p>
+
+                    <div class="code-shell">
+                        <div class="code-toolbar">
+                            <span>pseudo.py</span>
+                            <span id="taskMeta">Лёгкий уровень</span>
+                        </div>
+                        <div class="code-block" id="codeBlock"></div>
+                    </div>
+
+                    <div class="options" id="options"></div>
+
+                    <div class="actions">
+                        <button class="soft-btn" id="hintBtn1">Подсказка 1</button>
+                        <button class="soft-btn" id="hintBtn2">Подсказка 2</button>
+                        <button class="soft-btn danger hidden" id="checkBtn">Проверить строку</button>
+                        <button class="soft-btn primary" id="nextBtn" disabled>Следующее</button>
+                    </div>
+
+                    <div class="hint-box hidden" id="hintBox"></div>
+                    <div class="feedback-box" id="feedbackBox"></div>
+                </div>
+
+                <div id="resultView" class="result-view hidden">
+                    <div class="result-badge">Сессия завершена</div>
+                    <h2 id="resultLevel">...</h2>
+                    <p id="resultText"></p>
+
+                    <div class="result-grid">
+                        <div class="result-stat">
+                            <span>Очки</span>
+                            <strong id="finalScore">0</strong>
+                        </div>
+                        <div class="result-stat">
+                            <span>Верных ответов</span>
+                            <strong id="finalCorrect">0/10</strong>
+                        </div>
+                        <div class="result-stat">
+                            <span>Без подсказок</span>
+                            <strong id="finalPerfect">0</strong>
+                        </div>
+                        <div class="result-stat">
+                            <span>Точность</span>
+                            <strong id="finalPercent">0%</strong>
+                        </div>
+                    </div>
+
+                    <button class="soft-btn primary restart-big" id="againBtn">Пройти заново</button>
+                </div>
+            </article>
+
+            <aside class="rail">
+                <div class="card console-card">
+                    <div class="panel-title">Консоль</div>
+                    <div class="console" id="consoleBox"></div>
+                </div>
+
+                <div class="card note-card">
+                    <div class="panel-title">Подсказка по игре</div>
+                    <p>
+                        Смотри на очевидные ошибки: слабые пароли, открытые данные,
+                        подозрительные ссылки, отсутствие проверок и лишнее доверие к вводу.
+                    </p>
+                </div>
+            </aside>
+        </section>
+    </main>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
