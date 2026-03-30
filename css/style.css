@@ -174,6 +174,38 @@
     --code-comment: rgba(200, 210, 240, 0.74);
     --code-number: #ffd28a;
     --code-operator: rgba(238, 242, 255, 0.92);
+
+    /* ===== FIX: Contrast for answer buttons in Ember theme ===== */
+    /* Default state - ensure text is readable on dark surface-variant */
+    .answer-btn {
+        color: var(--md-sys-color-on-surface);
+    }
+
+    /* Selected state - dark text on light blue primary */
+    .answer-btn.selected {
+        color: var(--md-sys-color-on-primary);
+    }
+
+    /* Correct/Incorrect states - dark text for contrast on colored backgrounds */
+    .answer-btn.correct,
+    .answer-btn.incorrect {
+        color: var(--md-sys-color-background);
+        text-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Ensure answer text inherits the fixed color */
+    .answer-text {
+        color: inherit;
+        font-weight: 500;
+    }
+
+    /* Fix answer tag contrast in selected states */
+    .answer-btn.selected .answer-tag,
+    .answer-btn.correct .answer-tag,
+    .answer-btn.incorrect .answer-tag {
+        background: var(--md-sys-color-on-primary);
+        color: var(--md-sys-color-primary);
+    }
 }
 
 [data-theme="paper"] {
