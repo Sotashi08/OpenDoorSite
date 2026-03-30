@@ -1,478 +1,130 @@
-const allTasks = [
-    {
-        title: "Слишком простой пароль",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            'password = "1234"',
-            'if password == input("Пароль"):',
-            "    open_panel()"
-        ],
-        options: [
-            "Пароль слишком простой и легко угадывается",
-            "Код слишком длинный",
-            "Нужно больше пробелов",
-            "Плохо, что есть if"
-        ],
-        answer: 0,
-        hint1: "Подумай, легко ли угадать этот секрет.",
-        hint2: "Проблема не в коде, а в самом пароле.",
-        explanation: "Пароль слишком короткий и предсказуемый. Его можно быстро угадать или подобрать. Лучше использовать длинный уникальный пароль и не повторять его в разных сервисах.",
-        vulnType: "Слабая аутентификация"
-    },
-    {
-        title: "Пароль в открытом виде",
-        question: "Кликни на строку, где спрятана проблема.",
-        mode: "line",
-        lines: [
-            'login = input("Логин")',
-            'password = "Qwerty12"',
-            "save_account(login, password)"
-        ],
-        answerLine: 2,
-        hint1: "Секрет не должен лежать прямо в тексте программы.",
-        hint2: "Опасная строка выглядит как обычная переменная с паролем.",
-        explanation: "Пароль хранится прямо в коде, а это очень рискованно. Любой, кто увидит программу, узнает секрет. Правильно хранить такие данные отдельно и в защищённом виде.",
-        vulnType: "Секрет в коде"
-    },
-    {
-        title: "Передача без шифрования",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            'url = "http://shop.local/login"',
-            "send_login(url, user, password)",
-            "show_message('Готово')"
-        ],
-        options: [
-            "Данные отправляются без защищённого соединения",
-            "Слишком много строк",
-            "Нужно написать print вместо send_login",
-            "Нельзя использовать переменные"
-        ],
-        answer: 0,
-        hint1: "Посмотри на адрес сайта.",
-        hint2: "Проблема в том, что соединение выглядит незащищённым.",
-        explanation: "Данные идут по обычному, незащищённому адресу. Их проще перехватить. Для логинов, паролей и личной информации нужно использовать защищённый канал.",
-        vulnType: "Передача без шифрования"
-    },
-    {
-        title: "Публичный Wi-Fi",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            'network = "Public_Free_WiFi"',
-            "connect(network)",
-            "send_profile_data()"
-        ],
-        options: [
-            "Подключение к открытой сети без защиты",
-            "Нужно убрать кавычки",
-            "Слишком простое имя сети",
-            "Функция connect всегда запрещена"
-        ],
-        answer: 0,
-        hint1: "Открытая сеть — не лучший выбор для важных данных.",
-        hint2: "Проблема в том, что сеть выглядит общей и незащищённой.",
-        explanation: "Публичная сеть может быть небезопасной. В ней проще подсмотреть трафик или подменить соединение. Для важных действий лучше использовать защищённую сеть и защиту соединения.",
-        vulnType: "Небезопасная сеть"
-    },
-    {
-        title: "Нет проверки ввода",
-        question: "Кликни на строку, где пропущена проверка.",
-        mode: "line",
-        lines: [
-            'name = input("Имя")',
-            "save_profile(name)",
-            "show_ok()"
-        ],
-        answerLine: 2,
-        hint1: "Пользователь может ввести что угодно.",
-        hint2: "Опасна строка, где данные сразу принимаются без проверки.",
-        explanation: "Ввод пользователя сразу отправляется дальше без проверки. Это может привести к ошибкам, мусорным данным и уязвимостям. Надо проверять формат и допустимые значения.",
-        vulnType: "Нет проверки ввода"
-    },
-    {
-        title: "Подозрительный запрос к базе",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            'query = "SELECT * FROM users WHERE name = \'" + user + "\'"',
-            "db.run(query)",
-            "show_users()"
-        ],
-        options: [
-            "Запрос собирается из текста пользователя",
-            "Нужно заменить users на file",
-            "Проблема в слове SELECT",
-            "Нельзя использовать базу данных"
-        ],
-        answer: 0,
-        hint1: "Посмотри, откуда берётся кусок запроса.",
-        hint2: "Опасно, когда пользователь может повлиять на сам запрос.",
-        explanation: "Запрос собирается вручную из пользовательского ввода. Это опасно: ввод может изменить смысл запроса. Правильно — использовать безопасные параметры и не склеивать запрос строками.",
-        vulnType: "SQL-инъекция"
-    },
-    {
-        title: "Нет второго шага входа",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            'login = input("Логин")',
-            'password = input("Пароль")',
-            "open_account(login, password)"
-        ],
-        options: [
-            "Нет двухфакторной проверки",
-            "Нужно убрать логин",
-            "Пароль не должен быть строкой",
-            "Открывать аккаунт нельзя никогда"
-        ],
-        answer: 0,
-        hint1: "Вход подтверждается только одним способом.",
-        hint2: "Подумай, чего не хватает после пароля.",
-        explanation: "Здесь есть только логин и пароль. Если они окажутся у злоумышленника, он сразу войдёт. Дополнительный шаг входа делает аккаунт заметно безопаснее.",
-        vulnType: "Нет второго шага входа"
-    },
-    {
-        title: "Открытая админка",
-        question: "Кликни на строку, где забыли про защиту доступа.",
-        mode: "line",
-        lines: [
-            'admin_url = "/admin"',
-            "open_page(admin_url)",
-            "log_access()"
-        ],
-        answerLine: 2,
-        hint1: "Публичный доступ к админке — плохая идея.",
-        hint2: "Опасна строка, которая открывает админскую часть без проверки.",
-        explanation: "Административная часть открывается без проверки прав. Это опасно: любой может попробовать зайти туда. Нужно сначала убедиться, что пользователь имеет нужные права.",
-        vulnType: "Открытая админка"
-    },
-    {
-        title: "Системная ошибка наружу",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            "try:",
-            "    load_config()",
-            "except Exception as e:",
-            "    print(e)"
-        ],
-        options: [
-            "Показываются внутренние ошибки пользователю",
-            "Нужно убрать try",
-            "Ошибки полезно всегда печатать на экран",
-            "Проблема только в названии load_config"
-        ],
-        answer: 0,
-        hint1: "Лишняя информация в ошибке — это лишняя помощь для атакующего.",
-        hint2: "Посмотри, что происходит после исключения.",
-        explanation: "Пользователю показывается внутренняя ошибка системы. Это может раскрыть детали работы программы и помочь найти слабые места. Лучше показывать короткое понятное сообщение, а детали хранить в журнале.",
-        vulnType: "Утечка ошибок"
-    },
-    {
-        title: "Один пароль везде",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            'bank = "same_password_1"',
-            'mail = "same_password_1"',
-            'game = "same_password_1"'
-        ],
-        options: [
-            "Пароль одинаковый для разных сервисов",
-            "Слишком мало переменных",
-            "Нужно использовать только цифры",
-            "Одинаковый пароль всегда лучше"
-        ],
-        answer: 0,
-        hint1: "Если один пароль утечёт, пострадают все аккаунты.",
-        hint2: "Проблема не в самих строках, а в том, что везде одно и то же.",
-        explanation: "Одинаковый пароль в нескольких местах очень опасен. Потеря одного доступа может открыть сразу все остальные. Лучше делать отдельный пароль для каждого сервиса.",
-        vulnType: "Повторное использование пароля"
-    },
-    {
-        title: "Доверие пользовательским данным",
-        question: "Кликни на строку, где программа слишком доверяет вводу.",
-        mode: "line",
-        lines: [
-            'role = input("Роль")',
-            'if role == "admin":',
-            "    grant_access()"
-        ],
-        answerLine: 2,
-        hint1: "Пользователь сам выбрал себе роль.",
-        hint2: "Опасно, когда важное решение зависит только от строки, которую ввели с клавиатуры.",
-        explanation: "Программа верит роли, которую ввёл сам пользователь. Так делать нельзя: человек может написать что угодно. Роль должна проверяться по данным системы, а не по словам пользователя.",
-        vulnType: "Лишнее доверие к данным"
-    },
-    {
-        title: "Подозрительная ссылка",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            'link = "bit.ly/free-update-now"',
-            "open_link(link)",
-            "show_banner()"
-        ],
-        options: [
-            "Ссылка выглядит сомнительно и непонятно куда ведёт",
-            "Нужно всегда использовать короткие ссылки",
-            "Любая ссылка безопасна",
-            "Проблема только в названии переменной"
-        ],
-        answer: 0,
-        hint1: "Короткий адрес скрывает настоящий сайт.",
-        hint2: "Опасно, когда нельзя заранее понять, куда ведёт ссылка.",
-        explanation: "Ссылка выглядит подозрительно и скрывает настоящий адрес. Нельзя слепо открывать такие переходы. Пользователь должен понимать, куда он попадает.",
-        vulnType: "Небезопасная ссылка"
-    },
-    {
-        title: "Скачивание без проверки",
-        question: "Кликни на строку, где загрузка сделана рискованно.",
-        mode: "line",
-        lines: [
-            'file_url = input("Ссылка")',
-            "download(file_url)",
-            "save_file()"
-        ],
-        answerLine: 2,
-        hint1: "Сначала подумай: проверяется ли источник файла?",
-        hint2: "Опасна строка, которая скачивает всё подряд.",
-        explanation: "Файл скачивается без проверки источника и типа. Это может привести к загрузке вредного или ненужного файла. Надо проверять адрес, формат и источник.",
-        vulnType: "Скачивание без проверки"
-    },
-    {
-        title: "Нет лимита попыток",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            "while True:",
-            '    if check_login():',
-            "        open_panel()"
-        ],
-        options: [
-            "Нет ограничения на число попыток входа",
-            "Нужно убрать цикл while",
-            "Проверка входа всегда плохая",
-            "Проблема только в названии check_login"
-        ],
-        answer: 0,
-        hint1: "Подумай о бесконечных попытках.",
-        hint2: "Если ошибаться можно сколько угодно, защита быстро слабеет.",
-        explanation: "Попытки входа ничем не ограничены. Это облегчает подбор пароля и другие атаки. Лучше ограничить число попыток и делать задержку после ошибок.",
-        vulnType: "Нет лимита попыток"
-    },
-    {
-        title: "Устаревший протокол",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            'protocol = "old-ssl"',
-            "connect_secure(protocol)",
-            "send_data()"
-        ],
-        options: [
-            "Используется устаревший и слабый протокол",
-            "Протокол нужно писать с большой буквы",
-            "Подключение всегда лишнее",
-            "Данные нельзя отправлять вообще"
-        ],
-        answer: 0,
-        hint1: "Старые способы защиты обычно слабее.",
-        hint2: "Проблема в том, что выбран старый вариант защиты.",
-        explanation: "Используется устаревший протокол. Старые способы защиты часто имеют известные слабые места. Лучше применять современные и поддерживаемые варианты.",
-        vulnType: "Устаревший протокол"
-    },
-    {
-        title: "Личные данные в URL",
-        question: "Кликни на строку, где данные уходят слишком открыто.",
-        mode: "line",
-        lines: [
-            'url = "/profile?email=" + email',
-            "open_page(url)",
-            "log_request()"
-        ],
-        answerLine: 1,
-        hint1: "Личные данные не стоит показывать прямо в адресе.",
-        hint2: "Опасна строка, где email попадает в URL.",
-        explanation: "Личные данные помещаются прямо в адресную строку. Их могут увидеть в истории браузера, журналах и при копировании ссылки. Лучше передавать такие данные более безопасным способом.",
-        vulnType: "Личные данные в URL"
-    },
-    {
-        title: "Открытый API-ключ",
-        question: "Кликни на строку, где секрет оставили на виду.",
-        mode: "line",
-        lines: [
-            'API_KEY = "sk-test-12345"',
-            "send(API_KEY)",
-            "show_ready()"
-        ],
-        answerLine: 1,
-        hint1: "Секретный ключ не должен лежать прямо в исходнике.",
-        hint2: "Опасная строка выглядит как обычная константа.",
-        explanation: "API-ключ открыт прямо в коде. Это опасно, потому что его могут скопировать и использовать без разрешения. Секреты нужно хранить отдельно и не публиковать в коде.",
-        vulnType: "Открытый API-ключ"
-    },
-    {
-        title: "Нет прав доступа",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            "open_report(user_id)",
-            "show_report()",
-            "exit()"
-        ],
-        options: [
-            "Нет проверки прав доступа",
-            "Нужно убрать отчёт",
-            "Проблема только в имени переменной",
-            "Пользователю нельзя ничего показывать"
-        ],
-        answer: 0,
-        hint1: "Не каждый пользователь должен видеть всё.",
-        hint2: "Подумай, где должна быть проверка роли или прав.",
-        explanation: "Программа открывает отчёт без проверки прав. Это значит, что лишние люди могут увидеть чужие данные. Перед доступом нужно проверять, кому что разрешено.",
-        vulnType: "Отсутствие прав доступа"
-    },
-    {
-        title: "Работа с файлами без проверки",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            'path = input("Путь к файлу")',
-            "open_file(path)",
-            "show_ok()"
-        ],
-        options: [
-            "Прямой доступ к файловой системе без проверки",
-            "Нужно всегда открывать файл дважды",
-            "Проблема в том, что путь — это строка",
-            "Файлы вообще нельзя использовать"
-        ],
-        answer: 0,
-        hint1: "Путь из ввода может быть опасным.",
-        hint2: "Подумай, проверяется ли, какой именно файл откроют.",
-        explanation: "Программа принимает путь к файлу без проверки. Это опасно: можно открыть не тот файл или попасть куда не нужно. Нужно ограничивать допустимые пути и проверять ввод.",
-        vulnType: "Небезопасная работа с файлами"
-    },
-    {
-        title: "Подозрительная библиотека",
-        question: "Что здесь небезопасно?",
-        mode: "mcq",
-        lines: [
-            'library = "magic_free_toolkit"',
-            "install(library)",
-            "run()"
-        ],
-        options: [
-            "Используется подозрительная внешняя библиотека",
-            "Нужно ставить библиотеку вручную",
-            "Любая библиотека безопасна",
-            "Проблема только в слове magic"
-        ],
-        answer: 0,
-        hint1: "Неизвестный пакет без проверки — это риск.",
-        hint2: "Посмотри, звучит ли название слишком случайно.",
-        explanation: "Подключается подозрительная внешняя библиотека. Если источник неизвестен, она может принести ошибки или лишние риски. Лучше использовать только проверенные пакеты.",
-        vulnType: "Подозрительная библиотека"
-    }
-];
+/**
+ * SafeCode Lab — Interactive Cybersecurity Game
+ * Material 3 Expressive Edition
+ */
 
-const fileTabsData = [
-    {
-        name: "main.py",
-        preview:
-            `def run_game():
-    print("SafeCode Lab")
-    # проверяй очевидные ошибки
-    # не доверяй данным вслепую`
-    },
-    {
-        name: "auth.py",
-        preview:
-            `def login(user, password):
-    if not user or not password:
-        return "ошибка"
-    # проверка прав должна быть отдельной`
-    },
-    {
-        name: "net.py",
-        preview:
-            `def send_data(payload):
-    # используй защищённое соединение
-    # не передавай секреты в адресе`
-    }
-];
-
-const ui = {
-    bgFeed: document.getElementById("bgFeed"),
-    fileTabs: document.getElementById("fileTabs"),
-    filePreview: document.getElementById("filePreview"),
-    scanBtn: document.getElementById("scanBtn"),
-    themeBtn: document.getElementById("themeBtn"),
-    restartBtn: document.getElementById("restartBtn"),
-    taskCounter: document.getElementById("taskCounter"),
-    scoreCounter: document.getElementById("scoreCounter"),
-    timeCounter: document.getElementById("timeCounter"),
-    hintCounter: document.getElementById("hintCounter"),
-    levelPill: document.getElementById("levelPill"),
-    progressPill: document.getElementById("progressPill"),
-    progressFill: document.getElementById("progressFill"),
-    progressText: document.getElementById("progressText"),
-    taskBadge: document.getElementById("taskBadge"),
-    taskTitle: document.getElementById("taskTitle"),
-    taskQuestion: document.getElementById("taskQuestion"),
-    taskType: document.getElementById("taskType"),
-    taskMeta: document.getElementById("taskMeta"),
-    codeBlock: document.getElementById("codeBlock"),
-    options: document.getElementById("options"),
-    hintBtn1: document.getElementById("hintBtn1"),
-    hintBtn2: document.getElementById("hintBtn2"),
-    checkBtn: document.getElementById("checkBtn"),
-    nextBtn: document.getElementById("nextBtn"),
-    hintBox: document.getElementById("hintBox"),
-    feedbackBox: document.getElementById("feedbackBox"),
-    consoleBox: document.getElementById("consoleBox"),
-    toast: document.getElementById("toast"),
-    taskCard: document.getElementById("taskCard"),
-    gameView: document.getElementById("gameView"),
-    resultView: document.getElementById("resultView"),
-    resultLevel: document.getElementById("resultLevel"),
-    resultText: document.getElementById("resultText"),
-    finalScore: document.getElementById("finalScore"),
-    finalCorrect: document.getElementById("finalCorrect"),
-    finalPerfect: document.getElementById("finalPerfect"),
-    finalPercent: document.getElementById("finalPercent"),
-    againBtn: document.getElementById("againBtn"),
+// ===== THEME SYSTEM =====
+const THEMES = {
+    expressive: { name: 'Expressive', icon: '🎨', description: 'Material 3 Expressive — vibrant & dynamic' },
+    cyber: { name: 'Cyber', icon: '💻', description: 'Dark developer theme with neon accents' },
+    minimal: { name: 'Minimal', icon: '✨', description: 'Clean & focused minimal design' },
+    darkExpressive: { name: 'Dark Expressive', icon: '🌙', description: 'Expressive design in dark mode' }
 };
 
-let deck = [];
-let currentIndex = 0;
-let score = 0;
-let correctCount = 0;
-let hintsTotal = 0;
-let currentHints = 0;
-let answered = false;
-let selectedLine = null;
-let selectedAnswer = null;
-let startTime = Date.now();
-let timerId = null;
-let bgTimerId = null;
-let strictMode = false;
-let completedPerfect = 0;
+class ThemeManager {
+    constructor() {
+        this.currentTheme = localStorage.getItem('safeCodeTheme') || 'expressive';
+        this.applyTheme(this.currentTheme);
+    }
 
-function escapeHtml(text) {
-    return String(text)
-        .replaceAll("&", "&amp;")
-        .replaceAll("<", "&lt;")
-        .replaceAll(">", "&gt;")
-        .replaceAll('"', "&quot;")
-        .replaceAll("'", "&#039;");
+    applyTheme(themeId) {
+        document.documentElement.setAttribute('data-theme', themeId);
+        localStorage.setItem('safeCodeTheme', themeId);
+        this.currentTheme = themeId;
+        this.updateThemeButton();
+        // Логируем только если UI инициализирован
+        if (UI.get('toast')) {
+            UI.logConsole(`Тема изменена: ${THEMES[themeId].name}`);
+            UI.showToast(`Тема: ${THEMES[themeId].name}`, 'info');
+        }
+    }
+
+    cycleTheme() {
+        const themeIds = Object.keys(THEMES);
+        const currentIndex = themeIds.indexOf(this.currentTheme);
+        const nextIndex = (currentIndex + 1) % themeIds.length;
+        this.applyTheme(themeIds[nextIndex]);
+    }
+
+    updateThemeButton() {
+        const btn = document.getElementById('themeBtn');
+        if (btn) {
+            const theme = THEMES[this.currentTheme];
+            btn.innerHTML = `<span>${theme.icon}</span> ${theme.name}`;
+            btn.setAttribute('aria-label', `Сменить тему (текущая: ${theme.name})`);
+        }
+    }
+
+    renderThemeSelector() {
+        // Можно добавить модальное окно с выбором тем
+        return Object.entries(THEMES).map(([id, theme]) => `
+      <button class="theme-option ${id === this.currentTheme ? 'active' : ''}" 
+              data-theme="${id}"
+              aria-pressed="${id === this.currentTheme}">
+        <span class="theme-icon">${theme.icon}</span>
+        <span class="theme-name">${theme.name}</span>
+        <span class="theme-desc">${theme.description}</span>
+      </button>
+    `).join('');
+    }
 }
 
-function shuffle(array) {
+// ===== GAME STATE =====
+const GameState = {
+    deck: [],
+    currentIndex: 0,
+    score: 0,
+    correctCount: 0,
+    hintsUsed: 0,
+    perfectStreak: 0,
+    answered: false,
+    selectedLine: null,
+    selectedAnswer: null,
+    startTime: null,
+    timerId: null,
+    strictMode: false,
+
+    reset() {
+        this.deck = shuffleArray([...allTasks]).slice(0, 10);
+        this.currentIndex = 0;
+        this.score = 0;
+        this.correctCount = 0;
+        this.hintsUsed = 0;
+        this.perfectStreak = 0;
+        this.answered = false;
+        this.selectedLine = null;
+        this.selectedAnswer = null;
+        this.startTime = Date.now();
+        this.clearTimer();
+    },
+
+    clearTimer() {
+        if (this.timerId) {
+            clearInterval(this.timerId);
+            this.timerId = null;
+        }
+    },
+
+    startTimer(updateCallback) {
+        this.clearTimer();
+        this.timerId = setInterval(() => {
+            if (updateCallback) updateCallback();
+        }, 1000);
+    },
+
+    getElapsedTime() {
+        return Date.now() - (this.startTime || Date.now());
+    },
+
+    calculatePoints(hintsUsed) {
+        if (hintsUsed === 0) return 15;
+        if (hintsUsed === 1) return 11;
+        return 7;
+    },
+
+    isComplete() {
+        return this.currentIndex >= this.deck.length;
+    }
+};
+
+// ===== UTILITIES =====
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = String(text);
+    return div.innerHTML;
+}
+
+function shuffleArray(array) {
     const copy = [...array];
     for (let i = copy.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
@@ -483,415 +135,776 @@ function shuffle(array) {
 
 function formatTime(ms) {
     const total = Math.floor(ms / 1000);
-    const mins = String(Math.floor(total / 60)).padStart(2, "0");
-    const secs = String(total % 60).padStart(2, "0");
+    const mins = String(Math.floor(total / 60)).padStart(2, '0');
+    const secs = String(total % 60).padStart(2, '0');
     return `${mins}:${secs}`;
 }
 
-function logConsole(message) {
-    const stamp = new Date().toLocaleTimeString("ru-RU", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit"
-    });
+// ===== UI HELPERS =====
+const UI = {
+    elements: {},
 
-    const row = document.createElement("div");
-    row.className = "console-line";
-    row.textContent = `[${stamp}] ${message}`;
-    ui.consoleBox.prepend(row);
+    init() {
+        // Cache all DOM elements
+        this.elements = {
+            bgFeed: document.getElementById('bgFeed'),
+            fileTabs: document.getElementById('fileTabs'),
+            filePreview: document.getElementById('filePreview'),
+            scanBtn: document.getElementById('scanBtn'),
+            themeBtn: document.getElementById('themeBtn'),
+            restartBtn: document.getElementById('restartBtn'),
+            taskCounter: document.getElementById('taskCounter'),
+            scoreCounter: document.getElementById('scoreCounter'),
+            timeCounter: document.getElementById('timeCounter'),
+            hintCounter: document.getElementById('hintCounter'),
+            levelPill: document.getElementById('levelPill'),
+            progressPill: document.getElementById('progressPill'),
+            progressFill: document.getElementById('progressFill'),
+            progressText: document.getElementById('progressText'),
+            taskBadge: document.getElementById('taskBadge'),
+            taskTitle: document.getElementById('taskTitle'),
+            taskQuestion: document.getElementById('taskQuestion'),
+            taskType: document.getElementById('taskType'),
+            taskMeta: document.getElementById('taskMeta'),
+            codeBlock: document.getElementById('codeBlock'),
+            options: document.getElementById('options'),
+            hintBtn1: document.getElementById('hintBtn1'),
+            hintBtn2: document.getElementById('hintBtn2'),
+            checkBtn: document.getElementById('checkBtn'),
+            nextBtn: document.getElementById('nextBtn'),
+            hintBox: document.getElementById('hintBox'),
+            feedbackBox: document.getElementById('feedbackBox'),
+            consoleBox: document.getElementById('consoleBox'),
+            toast: document.getElementById('toast'),
+            taskCard: document.getElementById('taskCard'),
+            gameView: document.getElementById('gameView'),
+            resultView: document.getElementById('resultView'),
+            resultLevel: document.getElementById('resultLevel'),
+            resultText: document.getElementById('resultText'),
+            finalScore: document.getElementById('finalScore'),
+            finalCorrect: document.getElementById('finalCorrect'),
+            finalPerfect: document.getElementById('finalPerfect'),
+            finalPercent: document.getElementById('finalPercent'),
+            againBtn: document.getElementById('againBtn'),
+        };
+    },
 
-    while (ui.consoleBox.children.length > 12) {
-        ui.consoleBox.removeChild(ui.consoleBox.lastChild);
-    }
+    get(id) {
+        return this.elements[id];
+    },
 
-    addFeedLine(message);
-}
+    toggleClass(element, className, force) {
+        if (typeof force === 'boolean') {
+            element.classList.toggle(className, force);
+        } else {
+            element.classList.toggle(className);
+        }
+    },
 
-function addFeedLine(message) {
-    const stamp = new Date().toLocaleTimeString("ru-RU", {
-        hour: "2-digit",
-        minute: "2-digit"
-    });
+    showToast(message, type = 'info') {
+        const toast = this.get('toast');
+        toast.textContent = message;
+        toast.className = `toast show ${type}`;
 
-    const row = document.createElement("div");
-    row.className = "feed-line";
-    row.textContent = `[${stamp}] ${message}`;
-    ui.bgFeed.prepend(row);
+        // Auto-hide with proper cleanup
+        clearTimeout(this._toastTimer);
+        this._toastTimer = setTimeout(() => {
+            toast.classList.remove('show');
+        }, 2500);
+    },
 
-    while (ui.bgFeed.children.length > 18) {
-        ui.bgFeed.removeChild(ui.bgFeed.lastChild);
-    }
-}
-
-function showToast(text, kind = "info") {
-    ui.toast.textContent = text;
-    ui.toast.className = `toast show ${kind}`;
-    clearTimeout(showToast._timer);
-    showToast._timer = setTimeout(() => {
-        ui.toast.className = "toast";
-    }, 2200);
-}
-
-function updateClock() {
-    ui.timeCounter.textContent = formatTime(Date.now() - startTime);
-}
-
-function setSceneIntensity(step) {
-    const value = Math.min(1.38, 1 + step * 0.03);
-    document.documentElement.style.setProperty("--bg-sat", value.toFixed(2));
-}
-
-function renderTabs() {
-    ui.fileTabs.innerHTML = "";
-    fileTabsData.forEach((file, index) => {
-        const button = document.createElement("button");
-        button.className = `tab-btn${index === 0 ? " active" : ""}`;
-        button.type = "button";
-        button.textContent = file.name;
-        button.addEventListener("click", () => {
-            document.querySelectorAll(".tab-btn").forEach(btn => btn.classList.remove("active"));
-            button.classList.add("active");
-            ui.filePreview.textContent = file.preview;
-            logConsole(`Открыт файл ${file.name}`);
+    logConsole(message) {
+        const stamp = new Date().toLocaleTimeString('ru-RU', {
+            hour: '2-digit', minute: '2-digit', second: '2-digit'
         });
-        ui.fileTabs.appendChild(button);
-    });
 
-    ui.filePreview.textContent = fileTabsData[0].preview;
-}
+        const row = document.createElement('div');
+        row.className = 'console-line';
+        row.innerHTML = `<span style="color:var(--code-comment)">[${stamp}]</span> ${escapeHtml(message)}`;
 
-function pointsForHints(hintsUsed) {
-    if (hintsUsed <= 0) return 15;
-    if (hintsUsed === 1) return 11;
-    return 7;
-}
+        const consoleBox = this.get('consoleBox');
+        consoleBox.prepend(row);
 
-function currentTask() {
-    return deck[currentIndex];
-}
+        // Limit console lines
+        while (consoleBox.children.length > 15) {
+            consoleBox.removeChild(consoleBox.lastChild);
+        }
 
-function updateTopStats() {
-    ui.taskCounter.textContent = `${Math.min(currentIndex + 1, deck.length)}/${deck.length}`;
-    ui.scoreCounter.textContent = `${score}`;
-    ui.hintCounter.textContent = `${hintsTotal}`;
-    ui.progressPill.textContent = `${Math.min(currentIndex + 1, deck.length)} / ${deck.length}`;
-    const done = answered ? currentIndex + 1 : currentIndex;
-    const percent = Math.round((done / deck.length) * 100);
-    ui.progressText.textContent = `${percent}%`;
-    ui.progressFill.style.width = `${percent}%`;
-    ui.levelPill.textContent = answered ? "Проверка" : "Работаем";
-}
+        // Also add to background feed
+        this.addToFeed(message);
+    },
 
-function renderTask() {
-    const task = currentTask();
-    answered = false;
-    selectedLine = null;
-    selectedAnswer = null;
-    currentHints = 0;
+    addToFeed(message) {
+        const stamp = new Date().toLocaleTimeString('ru-RU', {
+            hour: '2-digit', minute: '2-digit'
+        });
 
-    ui.gameView.classList.remove("hidden");
-    ui.resultView.classList.add("hidden");
+        const row = document.createElement('div');
+        row.className = 'feed-line';
+        row.style.setProperty('--i', Math.random() * 20);
+        row.textContent = `[${stamp}] ${message}`;
 
-    ui.taskBadge.textContent = `Задание ${currentIndex + 1}/${deck.length}`;
-    ui.taskTitle.textContent = task.title;
-    ui.taskQuestion.textContent = task.question;
-    ui.taskType.textContent = task.mode === "line" ? "Клик по строке" : "Тест";
-    ui.taskMeta.textContent = task.vulnType;
+        const feed = this.get('bgFeed');
+        feed.prepend(row);
 
-    ui.hintBox.classList.add("hidden");
-    ui.hintBox.innerHTML = "";
-    ui.feedbackBox.innerHTML = "";
+        // Limit feed lines
+        while (feed.children.length > 20) {
+            feed.removeChild(feed.lastChild);
+        }
+    },
 
-    ui.nextBtn.disabled = true;
-    ui.nextBtn.textContent = currentIndex === deck.length - 1 ? "Финиш" : "Следующее";
-    ui.checkBtn.classList.toggle("hidden", task.mode !== "line");
-    ui.checkBtn.disabled = true;
+    updateStats() {
+        const { currentIndex, score, hintsUsed, deck } = GameState;
+        const total = deck.length;
+        const current = Math.min(currentIndex + (GameState.answered ? 1 : 0), total);
+        const percent = Math.round((current / total) * 100);
 
-    ui.options.innerHTML = "";
-    ui.options.style.display = task.mode === "mcq" ? "grid" : "none";
+        this.get('taskCounter').textContent = `${current}/${total}`;
+        this.get('scoreCounter').textContent = score;
+        this.get('hintCounter').textContent = hintsUsed;
+        this.get('progressPill').textContent = `${current} / ${total}`;
+        this.get('progressText').textContent = `${percent}%`;
+        this.get('progressFill').style.width = `${percent}%`;
+        this.get('timeCounter').textContent = formatTime(GameState.getElapsedTime());
+        this.get('levelPill').textContent = GameState.answered ? 'Проверка' : 'Работаем';
+    }
+};
 
-    ui.codeBlock.innerHTML = task.lines
-        .map((line, index) => {
-            if (task.mode === "line") {
-                return `
-          <button class="code-line" type="button" data-line="${index + 1}">
-            <span class="ln">${index + 1}</span>
-            <span class="txt">${escapeHtml(line)}</span>
-          </button>`;
-            }
+// ===== TASK RENDERER =====
+const TaskRenderer = {
+    render(task) {
+        const { gameView, resultView } = UI.elements;
+
+        // Reset state
+        GameState.answered = false;
+        GameState.selectedLine = null;
+        GameState.selectedAnswer = null;
+
+        // Show game view, hide result
+        gameView.classList.remove('hidden');
+        resultView.classList.add('hidden');
+
+        // Update header
+        UI.get('taskBadge').textContent = `Задание ${GameState.currentIndex + 1}/${GameState.deck.length}`;
+        UI.get('taskTitle').textContent = task.title;
+        UI.get('taskQuestion').textContent = task.question;
+        UI.get('taskType').textContent = task.mode === 'line' ? 'Клик по строке' : 'Тест';
+        UI.get('taskMeta').textContent = task.vulnType;
+
+        // Reset UI elements
+        UI.get('hintBox').classList.add('hidden');
+        UI.get('hintBox').innerHTML = '';
+        UI.get('feedbackBox').className = 'feedback-box';
+        UI.get('feedbackBox').innerHTML = '';
+        UI.get('nextBtn').disabled = true;
+        UI.get('nextBtn').textContent = GameState.currentIndex === GameState.deck.length - 1 ? 'Финиш' : 'Следующее';
+        UI.get('checkBtn').classList.toggle('hidden', task.mode !== 'line');
+        UI.get('checkBtn').disabled = true;
+
+        // Render code block
+        this.renderCode(task);
+
+        // Render options if MCQ mode
+        if (task.mode === 'mcq') {
+            this.renderOptions(task);
+            UI.get('options').style.display = 'grid';
+        } else {
+            UI.get('options').style.display = 'none';
+            UI.get('options').innerHTML = '';
+        }
+
+        // Add enter animation
+        UI.get('taskCard').classList.remove('enter');
+        // Force reflow for animation restart
+        void UI.get('taskCard').offsetWidth;
+        UI.get('taskCard').classList.add('enter');
+
+        // Log and update
+        UI.logConsole(`Загружено: ${task.title}`);
+        UI.updateStats();
+    },
+
+    renderCode(task) {
+        const codeBlock = UI.get('codeBlock');
+        codeBlock.innerHTML = task.lines.map((line, index) => {
+            const lineNum = index + 1;
+            const isSelectable = task.mode === 'line';
+            const ariaLabel = isSelectable ? `Строка ${lineNum}: ${escapeHtml(line)}` : '';
 
             return `
-        <div class="code-line static">
-          <span class="ln">${index + 1}</span>
-          <span class="txt">${escapeHtml(line)}</span>
-        </div>`;
-        })
-        .join("");
+        <button class="code-line ${isSelectable ? 'selectable' : 'static'}"
+                type="${isSelectable ? 'button' : 'div'}"
+                ${isSelectable ? `data-line="${lineNum}" tabindex="0"` : ''}
+                ${isSelectable ? `aria-label="${ariaLabel}"` : ''}>
+          <span class="ln">${lineNum}</span>
+          <span class="txt">${this.syntaxHighlight(line)}</span>
+        </button>
+      `;
+        }).join('');
 
-    if (task.mode === "mcq") {
-        ui.options.innerHTML = task.options
-            .map((option, index) => `
-        <button class="answer-btn" type="button" data-index="${index}">
-          <span class="answer-tag">${String.fromCharCode(65 + index)}</span>
+        // Add event listeners for line mode
+        if (task.mode === 'line') {
+            codeBlock.querySelectorAll('.code-line.selectable').forEach(btn => {
+                btn.addEventListener('click', () => this.handleLineSelect(btn, task));
+                btn.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        this.handleLineSelect(btn, task);
+                    }
+                });
+            });
+        }
+    },
+
+    syntaxHighlight(code) {
+        // Simple syntax highlighting for pseudo-code
+        return escapeHtml(code)
+            .replace(/\b(if|else|while|for|return|def|class|import|from)\b/g, '<span class="kw">$1</span>')
+            .replace(/(["'])(?:\\.|[^\\])*?\1/g, '<span class="str">$&</span>')
+            .replace(/\b(\w+)\s*\(/g, '<span class="fn">$1</span>(')
+            .replace(/(#|\/\/).*/g, '<span class="cmt">$&</span>');
+    },
+
+    renderOptions(task) {
+        const options = UI.get('options');
+        options.innerHTML = task.options.map((option, index) => {
+            const letter = String.fromCharCode(65 + index);
+            const ariaLabel = `Вариант ${letter}: ${escapeHtml(option)}`;
+            return `
+        <button class="answer-btn" type="button" data-index="${index}"
+                aria-label="${ariaLabel}">
+          <span class="answer-tag">${letter}</span>
           <span class="answer-text">${escapeHtml(option)}</span>
         </button>
-      `)
-            .join("");
-    }
+      `;
+        }).join('');
 
-    setSceneIntensity(currentIndex);
-    ui.taskCard.classList.remove("enter");
-    void ui.taskCard.offsetWidth;
-    ui.taskCard.classList.add("enter");
-
-    logConsole(`Загружено: ${task.title}`);
-    updateTopStats();
-}
-
-function revealHints() {
-    const task = currentTask();
-    const blocks = [];
-    if (currentHints >= 1) {
-        blocks.push(`<strong>Подсказка 1:</strong> ${task.hint1}`);
-    }
-    if (currentHints >= 2) {
-        blocks.push(`<strong>Подсказка 2:</strong> ${task.hint2}`);
-    }
-
-    ui.hintBox.innerHTML = blocks.join("<br><br>");
-    ui.hintBox.classList.toggle("hidden", blocks.length === 0);
-    updateTopStats();
-}
-
-function showHint(level) {
-    if (answered) return;
-    currentHints = Math.max(currentHints, level);
-    hintsTotal = Math.max(hintsTotal, currentHints) + (level === 2 && currentHints === 2 ? 0 : 0);
-    revealHints();
-    logConsole(`Показана подсказка ${level} для задания ${currentIndex + 1}`);
-    showToast(level === 1 ? "Подсказка раскрыта" : "Подсказка стала точнее");
-    updateTopStats();
-}
-
-function lockTaskUI(correctLine = null, wrongLine = null) {
-    ui.options.querySelectorAll(".answer-btn").forEach(btn => btn.disabled = true);
-    ui.codeBlock.querySelectorAll(".code-line[data-line]").forEach(btn => btn.disabled = true);
-
-    if (correctLine !== null) {
-        ui.codeBlock.querySelectorAll(".code-line[data-line]").forEach(btn => {
-            if (Number(btn.dataset.line) === correctLine) btn.classList.add("correct");
+        // Add event listeners
+        options.querySelectorAll('.answer-btn').forEach(btn => {
+            btn.addEventListener('click', () => this.handleAnswerSelect(btn, task));
         });
-    }
-    if (wrongLine !== null) {
-        ui.codeBlock.querySelectorAll(".code-line[data-line]").forEach(btn => {
-            if (Number(btn.dataset.line) === wrongLine) btn.classList.add("wrong");
-        });
-    }
-}
+    },
 
-function flashCriticalError() {
-    document.body.classList.add("error-mode");
-    setTimeout(() => document.body.classList.remove("error-mode"), 500);
-}
+    handleLineSelect(btn, task) {
+        if (GameState.answered) return;
 
-function answerTask(isCorrect, displayValue = "") {
-    if (answered) return;
-    answered = true;
+        // Clear previous selection
+        btn.parentElement.querySelectorAll('.code-line').forEach(l => l.classList.remove('selected'));
+        btn.classList.add('selected');
 
-    const task = currentTask();
-    const points = isCorrect ? pointsForHints(currentHints) : 0;
-    score += points;
-    if (isCorrect) {
-        correctCount += 1;
-        if (currentHints === 0) completedPerfect += 1;
-    }
+        const lineNum = parseInt(btn.dataset.line);
+        GameState.selectedLine = lineNum;
 
-    const feedback = isCorrect
-        ? `
-      <div class="ok"><strong>Верно.</strong> +${points} очков</div>
-      <div style="margin-top:8px;"><strong>В чем ошибка:</strong> ${task.explanation}</div>
-    `
-        : `
-      <div class="bad"><strong>Неверно.</strong> Ошибка не в этой части логики.</div>
-      <div style="margin-top:8px;"><strong>Почему это опасно:</strong> ${task.explanation}</div>
+        // Enable check button
+        UI.get('checkBtn').disabled = false;
+        UI.logConsole(`Выбрана строка ${lineNum}`);
+    },
+
+    handleAnswerSelect(btn, task) {
+        if (GameState.answered) return;
+
+        // Clear previous selection
+        btn.parentElement.querySelectorAll('.answer-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+
+        const answerIndex = parseInt(btn.dataset.index);
+        GameState.selectedAnswer = answerIndex;
+
+        // Auto-check for MCQ mode
+        this.checkAnswer(task);
+    },
+
+    checkAnswer(task) {
+        if (GameState.answered) return;
+
+        let isCorrect = false;
+
+        if (task.mode === 'mcq') {
+            isCorrect = GameState.selectedAnswer === task.answer;
+        } else if (task.mode === 'line') {
+            isCorrect = GameState.selectedLine === task.answerLine;
+        }
+
+        this.showFeedback(task, isCorrect);
+        GameState.answered = true;
+
+        if (isCorrect) {
+            GameState.correctCount++;
+            const points = GameState.calculatePoints(GameState.currentHints || 0);
+            GameState.score += points;
+            if ((GameState.currentHints || 0) === 0) GameState.perfectStreak++;
+            UI.logConsole(`✅ Верно! +${points} очков`);
+        } else {
+            UI.logConsole(`❌ Неверно. Правильный ответ: ${this.getCorrectAnswerText(task)}`);
+        }
+
+        // Update UI state
+        UI.get('nextBtn').disabled = false;
+        UI.get('hintBtn1').disabled = true;
+        UI.get('hintBtn2').disabled = true;
+        if (task.mode === 'line') {
+            UI.get('checkBtn').disabled = true;
+        }
+
+        UI.updateStats();
+    },
+
+    getCorrectAnswerText(task) {
+        if (task.mode === 'mcq') {
+            return task.options[task.answer];
+        } else if (task.mode === 'line') {
+            return `Строка ${task.answerLine}: ${task.lines[task.answerLine - 1]}`;
+        }
+        return 'Неизвестно';
+    },
+
+    showFeedback(task, isCorrect) {
+        const feedback = UI.get('feedbackBox');
+        feedback.className = `feedback-box ${isCorrect ? 'correct' : 'incorrect'}`;
+
+        const correctIcon = isCorrect ? '✅' : '❌';
+        const actionText = isCorrect ? 'Отлично!' : 'Попробуем разобраться:';
+
+        feedback.innerHTML = `
+      <strong>${correctIcon} ${actionText}</strong><br>
+      ${escapeHtml(task.explanation)}
     `;
 
-    ui.feedbackBox.innerHTML = feedback;
-    ui.nextBtn.disabled = false;
-    updateTopStats();
+        // Scroll feedback into view
+        feedback.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+};
 
-    if (task.mode === "line") {
-        lockTaskUI(task.answerLine, selectedLine);
-    } else {
-        ui.options.querySelectorAll(".answer-btn").forEach(btn => {
-            const idx = Number(btn.dataset.index);
-            if (idx === task.answer) btn.classList.add("correct");
-            if (idx === selectedAnswer && !isCorrect) btn.classList.add("wrong");
-            btn.disabled = true;
+// ===== HINT SYSTEM =====
+const HintSystem = {
+    showHint(level) {
+        if (GameState.answered) return;
+
+        const task = GameState.deck[GameState.currentIndex];
+        const hintBox = UI.get('hintBox');
+
+        if (level === 1 && !hintBox.dataset.hint1) {
+            hintBox.dataset.hint1 = '1';
+            GameState.currentHints = (GameState.currentHints || 0) + 1;
+            GameState.hintsUsed++;
+            UI.get('hintCounter').textContent = GameState.hintsUsed;
+            UI.logConsole(`Подсказка #1 использована`);
+        }
+
+        if (level === 2 && !hintBox.dataset.hint2) {
+            hintBox.dataset.hint2 = '1';
+            GameState.currentHints = (GameState.currentHints || 0) + 1;
+            GameState.hintsUsed++;
+            UI.get('hintCounter').textContent = GameState.hintsUsed;
+            UI.logConsole(`Подсказка #2 использована`);
+        }
+
+        // Build hint content
+        const hints = [];
+        if (hintBox.dataset.hint1) hints.push(`<strong>💡 Подсказка 1:</strong> ${escapeHtml(task.hint1)}`);
+        if (hintBox.dataset.hint2) hints.push(`<strong>💡 Подсказка 2:</strong> ${escapeHtml(task.hint2)}`);
+
+        hintBox.innerHTML = hints.join('<br><br>');
+        hintBox.classList.remove('hidden');
+
+        // Disable used hint buttons
+        if (hintBox.dataset.hint1) UI.get('hintBtn1').disabled = true;
+        if (hintBox.dataset.hint2) UI.get('hintBtn2').disabled = true;
+    }
+};
+
+// ===== RESULT SCREEN =====
+const ResultScreen = {
+    show() {
+        const { gameView, resultView } = UI.elements;
+        const total = GameState.deck.length;
+        const accuracy = Math.round((GameState.correctCount / total) * 100);
+
+        // Hide game, show result
+        gameView.classList.add('hidden');
+        resultView.classList.remove('hidden');
+
+        // Calculate level
+        let level = 'Новичок';
+        let levelDesc = 'Хорошее начало! Продолжай изучать основы ИБ.';
+
+        if (accuracy >= 90 && GameState.hintsUsed <= 2) {
+            level = 'Эксперт 🔐';
+            levelDesc = 'Впечатляющий результат! Вы отлично разбираетесь в кибербезопасности.';
+        } else if (accuracy >= 70) {
+            level = 'Продвинутый 🛡️';
+            levelDesc = 'Отличная работа! Вы уверенно определяете уязвимости.';
+        } else if (accuracy >= 50) {
+            level = 'Развивающийся 🔍';
+            levelDesc = 'Вы на правильном пути! Практика сделает вас ещё лучше.';
+        }
+
+        // Update result content
+        UI.get('resultLevel').textContent = level;
+        UI.get('resultText').textContent = levelDesc;
+        UI.get('finalScore').textContent = GameState.score;
+        UI.get('finalCorrect').textContent = `${GameState.correctCount}/${total}`;
+        UI.get('finalPerfect').textContent = GameState.perfectStreak;
+        UI.get('finalPercent').textContent = `${accuracy}%`;
+
+        // Stop timer
+        GameState.clearTimer();
+
+        UI.logConsole(`🏁 Сессия завершена! Результат: ${accuracy}%`);
+    }
+};
+
+// ===== INITIALIZATION =====
+let themeManager;
+
+function initGame() {
+    // Initialize UI references
+    UI.init();
+
+    // Initialize theme system
+    themeManager = new ThemeManager();
+
+    // Setup event listeners
+    setupEventListeners();
+
+    // Render file tabs
+    renderFileTabs();
+
+    // Start new game
+    startNewGame();
+}
+
+function setupEventListeners() {
+    // Theme toggle
+    UI.get('themeBtn')?.addEventListener('click', () => {
+        themeManager.cycleTheme();
+    });
+
+    // Restart buttons
+    const restartHandler = () => {
+        if (confirm('Начать заново? Текущий прогресс будет сброшен.')) {
+            startNewGame();
+        }
+    };
+
+    UI.get('restartBtn')?.addEventListener('click', restartHandler);
+    UI.get('againBtn')?.addEventListener('click', restartHandler);
+
+    // Hint buttons
+    UI.get('hintBtn1')?.addEventListener('click', () => HintSystem.showHint(1));
+    UI.get('hintBtn2')?.addEventListener('click', () => HintSystem.showHint(2));
+
+    // Check button (line mode)
+    UI.get('checkBtn')?.addEventListener('click', () => {
+        const task = GameState.deck[GameState.currentIndex];
+        TaskRenderer.checkAnswer(task);
+    });
+
+    // Next button
+    UI.get('nextBtn')?.addEventListener('click', () => {
+        GameState.currentIndex++;
+
+        if (GameState.isComplete()) {
+            ResultScreen.show();
+        } else {
+            const nextTask = GameState.deck[GameState.currentIndex];
+            TaskRenderer.render(nextTask);
+        }
+    });
+
+    // Scan button (demo)
+    UI.get('scanBtn')?.addEventListener('click', () => {
+        UI.showToast('Диагностика: Все системы в норме ✓', 'success');
+        UI.logConsole('🔍 Диагностика завершена: уязвимостей не обнаружено');
+    });
+
+    // Keyboard navigation
+    document.addEventListener('keydown', (e) => {
+        // Skip if typing in input
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+        // Next task on Enter (when enabled)
+        if (e.key === 'Enter' && !UI.get('nextBtn').disabled) {
+            UI.get('nextBtn').click();
+        }
+
+        // Hint 1 on Ctrl+1
+        if (e.ctrlKey && e.key === '1') {
+            e.preventDefault();
+            UI.get('hintBtn1')?.click();
+        }
+
+        // Hint 2 on Ctrl+2
+        if (e.ctrlKey && e.key === '2') {
+            e.preventDefault();
+            UI.get('hintBtn2')?.click();
+        }
+    });
+}
+
+function renderFileTabs() {
+    const tabs = UI.get('fileTabs');
+    const preview = UI.get('filePreview');
+
+    if (!tabs || !preview) return;
+
+    tabs.innerHTML = fileTabsData.map((file, index) => `
+    <button class="tab-btn ${index === 0 ? 'active' : ''}" 
+            type="button"
+            data-file="${file.name}"
+            aria-controls="filePreview">
+      ${escapeHtml(file.name)}
+    </button>
+  `).join('');
+
+    // Set initial preview
+    preview.textContent = fileTabsData[0].preview;
+
+    // Add tab click handlers
+    tabs.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Update active state
+            tabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+
+            // Update preview
+            const fileName = btn.dataset.file;
+            const file = fileTabsData.find(f => f.name === fileName);
+            if (file) {
+                preview.textContent = file.preview;
+                UI.logConsole(`📄 Открыт файл: ${fileName}`);
+            }
         });
-    }
-
-    if (isCorrect) {
-        ui.levelPill.textContent = "Уязвимость найдена";
-        showToast(`Верно: +${points} очков`, "success");
-        logConsole(`Верный ответ: ${task.title} (${displayValue || "вариант"})`);
-    } else {
-        ui.levelPill.textContent = "Критическая ошибка";
-        flashCriticalError();
-        showToast("Критическая ошибка: это был не тот ответ", "danger");
-        logConsole(`Неверный ответ: ${task.title}`);
-    }
+    });
 }
 
-function submitMcq(index) {
-    if (answered) return;
-    selectedAnswer = index;
-    const task = currentTask();
-    answerTask(index === task.answer, task.options[index]);
-}
+function startNewGame() {
+    // Reset game state
+    GameState.reset();
 
-function submitLineAnswer() {
-    if (answered || selectedLine === null) return;
-    const task = currentTask();
-    answerTask(selectedLine === task.answerLine, `строка ${selectedLine}`);
-}
+    // Start timer
+    GameState.startTimer(() => UI.updateStats());
 
-function nextTask() {
-    if (!answered) return;
-
-    if (currentIndex < deck.length - 1) {
-        currentIndex += 1;
-        renderTask();
-    } else {
-        finishGame();
+    // Render first task
+    if (GameState.deck.length > 0) {
+        TaskRenderer.render(GameState.deck[0]);
+        UI.logConsole('🎮 Новая сессия начата');
+        UI.showToast('Удачи в поиске уязвимостей! 🛡️', 'success');
     }
 }
 
-function levelFromPercent(percent) {
-    if (percent >= 85) return "Страж данных";
-    if (percent >= 70) return "Кибер-аналитик";
-    if (percent >= 50) return "Бдительный разработчик";
-    return "Новичок безопасности";
-}
+// ===== DATA =====
+const fileTabsData = [
+    {
+        name: 'auth.py',
+        preview: 'def login(user, password):\n    # Проверка учетных данных\n    if password == "admin123":\n        return True\n    return False'
+    },
+    {
+        name: 'api.py',
+        preview: 'def get_user_data(user_id):\n    # Получение данных пользователя\n    query = "SELECT * FROM users WHERE id = " + user_id\n    return db.execute(query)'
+    },
+    {
+        name: 'config.py',
+        preview: '# Конфигурация приложения\nAPI_KEY = "sk-1234567890abcdef"\nDB_PASSWORD = "root123"\nDEBUG = True'
+    }
+];
 
-function finishGame() {
-    const maxScore = deck.length * 15;
-    const percent = Math.round((score / maxScore) * 100);
-    const level = levelFromPercent(percent);
+const allTasks = [
+    {
+        title: 'Уязвимость SQL-инъекции',
+        question: 'В какой строке находится уязвимость SQL-инъекции?',
+        mode: 'line',
+        vulnType: 'SQL Injection',
+        lines: [
+            'def get_user(user_id):',
+            '    # Получение пользователя из БД',
+            '    query = "SELECT * FROM users WHERE id = " + user_id',
+            '    result = db.execute(query)',
+            '    return result'
+        ],
+        answerLine: 3,
+        hint1: 'Обратите внимание на формирование SQL-запроса',
+        hint2: 'Конкатенация строк в SQL-запросе позволяет внедрить вредоносный код',
+        explanation: 'Строка 3: прямая конкатенация user_id в SQL-запрос позволяет выполнить SQL-инъекцию. Используйте параметризованные запросы.'
+    },
+    {
+        title: 'Слабый пароль',
+        question: 'Какая уязвимость присутствует в коде аутентификации?',
+        mode: 'mcq',
+        vulnType: 'Weak Password',
+        lines: [
+            'def authenticate(username, password):',
+            '    if password == "123456":',
+            '        return login_user(username)',
+            '    return False'
+        ],
+        options: [
+            'Уязвимость XSS',
+            'Слабый хардкод-пароль',
+            'Отсутствует валидация ввода',
+            'Уязвимость CSRF'
+        ],
+        answer: 1,
+        hint1: 'Посмотрите на значение пароля в коде',
+        hint2: 'Пароль слишком простой и зашит в коде',
+        explanation: 'В коде используется слабый хардкод-пароль "123456", который легко подобрать.'
+    },
+    {
+        title: 'Отсутствует проверка ввода',
+        question: 'В какой строке отсутствует проверка пользовательского ввода?',
+        mode: 'line',
+        vulnType: 'Input Validation',
+        lines: [
+            'def process_email(email):',
+            '    # Отправка письма',
+            '    send_email(email, "Welcome!")',
+            '    return True'
+        ],
+        answerLine: 3,
+        hint1: 'Где используется пользовательский ввод без проверки?',
+        hint2: 'Email должен валидироваться перед использованием',
+        explanation: 'Строка 3: email используется без предварительной валидации формата.'
+    },
+    {
+        title: 'Хардкод секретных ключей',
+        question: 'Какая проблема безопасности есть в этом коде?',
+        mode: 'mcq',
+        vulnType: 'Hardcoded Secrets',
+        lines: [
+            '# Конфигурация API',
+            'API_KEY = "sk-abc123xyz789"',
+            'SECRET_TOKEN = "super_secret_token_12345"',
+            'DEBUG_MODE = True'
+        ],
+        options: [
+            'Неправильное форматирование кода',
+            'Хардкод секретных ключей в коде',
+            'Отсутствуют комментарии',
+            'Неправильный порядок импортов'
+        ],
+        answer: 1,
+        hint1: 'Обратите внимание на строки с константами',
+        hint2: 'Секретные значения не должны храниться в коде',
+        explanation: 'Секретные ключи API и токены не должны храниться в исходном коде. Используйте переменные окружения.'
+    },
+    {
+        title: 'XSS уязвимость',
+        question: 'В какой строке возможна XSS-атака?',
+        mode: 'line',
+        vulnType: 'XSS',
+        lines: [
+            'def render_comment(comment):',
+            '    # Отображение комментария',
+            '    return f"<div class=\'comment\'>{comment}</div>"',
+            '    # Конец функции'
+        ],
+        answerLine: 3,
+        hint1: 'Где пользовательский контент выводится без экранирования?',
+        hint2: 'HTML-контекст требует экранирования специального ввода',
+        explanation: 'Строка 3: комментарий выводится без HTML-экранирования, что позволяет внедрить вредоносный скрипт.'
+    },
+    {
+        title: 'Небезопасная десериализация',
+        question: 'Какая уязвимость присутствует в коде?',
+        mode: 'mcq',
+        vulnType: 'Insecure Deserialization',
+        lines: [
+            'import pickle',
+            'def load_user_data(data):',
+            '    return pickle.loads(data)'
+        ],
+        options: [
+            'Утечка памяти',
+            'Небезопасная десериализация через pickle',
+            'Отсутствует обработка исключений',
+            'Неправильный импорт модуля'
+        ],
+        answer: 1,
+        hint1: 'Модуль pickle небезопасен для ненадёжных данных',
+        hint2: 'pickle.loads может выполнить произвольный код',
+        explanation: 'pickle.loads() может выполнить произвольный код при десериализации ненадёжных данных. Используйте JSON или другие безопасные форматы.'
+    },
+    {
+        title: 'Отсутствует HTTPS',
+        question: 'В какой строке проблема безопасности?',
+        mode: 'line',
+        vulnType: 'Insecure Transport',
+        lines: [
+            'def fetch_data(endpoint):',
+            '    # Запрос к API',
+            '    url = "http://api.example.com/" + endpoint',
+            '    response = requests.get(url)',
+            '    return response.json()'
+        ],
+        answerLine: 3,
+        hint1: 'Какой протокол используется для соединения?',
+        hint2: 'HTTP не шифрует передаваемые данные',
+        explanation: 'Строка 3: используется HTTP вместо HTTPS, данные передаются в открытом виде.'
+    },
+    {
+        title: 'Избыточные права доступа',
+        question: 'Какая проблема безопасности в этом коде?',
+        mode: 'mcq',
+        vulnType: 'Excessive Permissions',
+        lines: [
+            'def create_app_user():',
+            '    user = User()',
+            '    user.role = "admin"',
+            '    user.permissions = ["read", "write", "delete", "admin"]',
+            '    return user'
+        ],
+        options: [
+            'Неправильное создание объекта',
+            'Пользователю назначены избыточные права',
+            'Отсутствует проверка на дубликаты',
+            'Неправильное имя класса'
+        ],
+        answer: 1,
+        hint1: 'Какие права получает обычный пользователь?',
+        hint2: 'Принцип минимальных привилегий нарушен',
+        explanation: 'Обычному пользователю назначаются права администратора. Следует применять принцип минимальных привилегий.'
+    },
+    {
+        title: 'Уязвимость path traversal',
+        question: 'В какой строке уязвимость path traversal?',
+        mode: 'line',
+        vulnType: 'Path Traversal',
+        lines: [
+            'def read_file(filename):',
+            '    # Чтение файла из директории',
+            '    filepath = "/var/data/" + filename',
+            '    return open(filepath).read()'
+        ],
+        answerLine: 4,
+        hint1: 'Где формируется путь к файлу?',
+        hint2: 'Пользователь может указать "../" для доступа к другим директориям',
+        explanation: 'Строка 4: пользователь может указать путь с "../" для чтения файлов за пределами разрешённой директории.'
+    },
+    {
+        title: 'Отсутствует rate limiting',
+        question: 'Какая проблема безопасности в этом коде?',
+        mode: 'mcq',
+        vulnType: 'Missing Rate Limiting',
+        lines: [
+            'def login(request):',
+            '    username = request.POST["username"]',
+            '    password = request.POST["password"]',
+            '    if check_credentials(username, password):',
+            '        return redirect("/dashboard")',
+            '    return render("login.html")'
+        ],
+        options: [
+            'Неправильная обработка POST-данных',
+            'Отсутствует ограничение количества попыток входа',
+            'Неправильный редирект',
+            'Отсутствует валидация username'
+        ],
+        answer: 1,
+        hint1: 'Что может произойти при множественных попытках входа?',
+        hint2: 'Brute force атака возможна без ограничений',
+        explanation: 'Отсутствует rate limiting для попыток входа, что позволяет проводить brute force атаки.'
+    }
+];
 
-    ui.gameView.classList.add("hidden");
-    ui.resultView.classList.remove("hidden");
-
-    ui.resultLevel.textContent = level;
-    ui.resultText.textContent =
-        percent >= 85
-            ? "Ты очень уверенно замечаешь опасные практики и понимаешь, где код ведёт себя рискованно."
-            : percent >= 70
-                ? "Ты уже видишь большую часть типичных проблем и умеешь быстро находить слабые места."
-                : percent >= 50
-                    ? "Ты уверенно замечаешь очевидные риски. Ещё немного практики — и будет отличный уровень."
-                    : "Ты только начинаешь, и это нормально. Важно, что ты уже научился замечать логические проблемы.";
-
-    ui.finalScore.textContent = `${score}/${maxScore}`;
-    ui.finalCorrect.textContent = `${correctCount}/${deck.length}`;
-    ui.finalPerfect.textContent = `${completedPerfect}`;
-    ui.finalPercent.textContent = `${percent}%`;
-    ui.levelPill.textContent = level;
-    ui.progressPill.textContent = "Финиш";
-
-    ui.progressFill.style.width = "100%";
-    ui.progressText.textContent = "100%";
-
-    logConsole(`Сессия завершена: ${level}`);
-    showToast(`Финиш: ${level}`, "success");
-}
-
-function resetGame() {
-    deck = shuffle(allTasks).slice(0, 10);
-    currentIndex = 0;
-    score = 0;
-    correctCount = 0;
-    hintsTotal = 0;
-    currentHints = 0;
-    answered = false;
-    selectedLine = null;
-    selectedAnswer = null;
-    completedPerfect = 0;
-    startTime = Date.now();
-
-    document.body.classList.remove("error-mode");
-    ui.consoleBox.innerHTML = "";
-    ui.bgFeed.innerHTML = "";
-    ui.taskCard.classList.remove("enter");
-
-    renderTabs();
-    renderTask();
-    updateClock();
-
-    logConsole("Сессия запущена заново");
-    showToast("Новая сессия готова", "success");
-}
-
-function addDiagnostics() {
-    const messages = [
-        "Проверка прав доступа: без критических ошибок",
-        "Аудит ввода: найдены слабые места",
-        "Фоновый анализ кода: готово",
-        "Псевдологирование: активно",
-        "Система уведомлений: в норме"
-    ];
-    const msg = messages[Math.floor(Math.random() * messages.length)];
-    logConsole(`[DIAG] ${msg}`);
-    showToast("Диагностика выполнена");
-}
-
-function toggleStrictMode() {
-    strictMode = !strictMode;
-    document.body.classList.toggle("strict", strictMode);
-    ui.themeBtn.textContent = strictMode ? "Нормальный фон" : "Режим фокуса";
-    logConsole(strictMode ? "Включён строгий режим" : "Отключён строгий режим");
-    showToast(strictMode ? "Строгий режим включён" : "Фон смягчён");
-}
-
-ui.codeBlock.addEventListener("click", (event) => {
-    const lineBtn = event.target.closest(".code-line[data-line]");
-    if (!lineBtn || answered || currentTask().mode !== "line") return;
-
-    ui.codeBlock.querySelectorAll(".code-line[data-line]").forEach(btn => btn.classList.remove("selected"));
-    lineBtn.classList.add("selected");
-    selectedLine = Number(lineBtn.dataset.line);
-    ui.checkBtn.disabled = false;
-});
-
-ui.options.addEventListener("click", (event) => {
-    const btn = event.target.closest(".answer-btn");
-    if (!btn || answered) return;
-    submitMcq(Number(btn.dataset.index));
-});
-
-ui.hintBtn1.addEventListener("click", () => showHint(1));
-ui.hintBtn2.addEventListener("click", () => showHint(2));
-ui.checkBtn.addEventListener("click", submitLineAnswer);
-ui.nextBtn.addEventListener("click", nextTask);
-ui.restartBtn.addEventListener("click", resetGame);
-ui.againBtn.addEventListener("click", resetGame);
-ui.scanBtn.addEventListener("click", addDiagnostics);
-ui.themeBtn.addEventListener("click", toggleStrictMode);
-
-timerId = setInterval(updateClock, 1000);
-bgTimerId = setInterval(() => {
-    const samples = [
-        "log::security scan running",
-        "log::pseudo build successful",
-        "log::watching input validation",
-        "log::admin permissions checked",
-        "log::packet trace idle"
-    ];
-    addFeedLine(samples[Math.floor(Math.random() * samples.length)]);
-}, 4200);
-
-renderTabs();
-deck = shuffle(allTasks).slice(0, 10);
-renderTask();
-updateClock();
-logConsole("Система готова к проверке");
+// ===== START =====
+document.addEventListener('DOMContentLoaded', initGame);
