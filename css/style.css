@@ -2031,6 +2031,7 @@ div.code-line {
     border-bottom: 1px solid var(--md-sys-color-outline-variant);
 }
 
+
 .file-modal-info {
     font-size: var(--md-sys-typescale-body-small, 12px);
     color: var(--md-sys-color-on-surface-variant);
