@@ -156,6 +156,9 @@
                             <div class="progress-fill" id="progressFill"></div>
                         </div>
                     </div>
+                    <button class="soft-btn" id="historyBtn" style="margin-top: var(--md-sys-spacing-3); width: 100%;">
+                        📜 История сессий
+                    </button>
                 </div>
 
                 <div class="card note-card">
@@ -318,6 +321,26 @@
 
         <div class="file-modal-footer">
             <button class="soft-btn" id="fileModalCloseBtn">Закрыть</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="historyModal" aria-hidden="true" role="dialog" aria-label="История сессий">
+    <div class="modal-backdrop" id="historyBackdrop" aria-hidden="true"></div>
+    <div class="modal-panel history-panel card" role="document">
+        <div class="history-header">
+            <h2 class="panel-title">📜 История сессий</h2>
+            <button class="close-btn" id="historyClose" aria-label="Закрыть">&times;</button>
+        </div>
+        <div class="history-content" id="historyContent">
+            <div class="history-empty hidden" id="historyEmpty">
+                <p>Пока нет сохранённых сессий</p>
+            </div>
+            <div class="history-list" id="historyList"></div>
+        </div>
+        <div class="history-footer">
+            <button class="soft-btn danger" id="historyClear">Очистить историю</button>
+            <button class="soft-btn" id="historyCloseBtn">Закрыть</button>
         </div>
     </div>
 </div>

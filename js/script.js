@@ -61,7 +61,74 @@ class ThemeManager {
         <span class="theme-name">${theme.name}</span>
         <span class="theme-desc">${theme.description}</span>
       </button>
-    `).join('');
+        `).join('');
+    }
+}
+
+// ===== SESSION HISTORY =====
+class SessionHistory {
+    static STORAGE_KEY = 'safeCodeHistory';
+    static MAX_SESSIONS = 20;
+
+    static getSessions() {
+        try {
+            const data = localStorage.getItem(this.STORAGE_KEY);
+            return data ? JSON.parse(data) : [];
+        } catch {
+            return [];
+        }
+    }
+
+    static save(session) {
+        const sessions = this.getSessions();
+        sessions.unshift(session);
+        if (sessions.length > this.MAX_SESSIONS) {
+            sessions.pop();
+        }
+        localStorage.setItem(this.STORAGE_KEY, JSON.stringify(sessions));
+    }
+
+    static clear() {
+        localStorage.removeItem(this.STORAGE_KEY);
+    }
+
+    static render() {
+        const sessions = this.getSessions();
+        const list = document.getElementById('historyList');
+        const empty = document.getElementById('historyEmpty');
+
+        if (sessions.length === 0) {
+            empty.classList.remove('hidden');
+            list.innerHTML = '';
+            return;
+        }
+
+        empty.classList.add('hidden');
+        list.innerHTML = sessions.map(session => {
+            const date = new Date(session.date);
+            const dateStr = date.toLocaleDateString('ru-RU', {
+                day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+            });
+            const minutes = Math.floor(session.time / 60);
+            const seconds = session.time % 60;
+            const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+            return `
+            <div class="history-item">
+                <div class="history-item-header">
+                    <span class="history-item-date">${dateStr}</span>
+                    <span class="history-item-score">${session.score} очков</span>
+                </div>
+                <div class="history-item-stats">
+                    <span>✓ ${session.correct}/${session.total}</span>
+                    <span>🎯 ${session.accuracy}%</span>
+                    <span>💡 ${session.hintsUsed}</span>
+                    <span>⏱ ${timeStr}</span>
+                    ${session.perfectStreak > 0 ? `<span>⭐ ${session.perfectStreak}</span>` : ''}
+                </div>
+            </div>
+        `;
+        }).join('');
     }
 }
 
@@ -545,6 +612,18 @@ const ResultScreen = {
         const total = GameState.deck.length;
         const accuracy = Math.round((GameState.correctCount / total) * 100);
 
+        // Save session to history
+        SessionHistory.save({
+            date: new Date().toISOString(),
+            score: GameState.score,
+            correct: GameState.correctCount,
+            total: total,
+            accuracy: accuracy,
+            hintsUsed: GameState.hintsUsed,
+            perfectStreak: GameState.perfectStreak,
+            time: GameState.startTime ? Math.round((Date.now() - GameState.startTime) / 1000) : 0
+        });
+
         // Hide game, show result
         gameView.classList.add('hidden');
         resultView.classList.remove('hidden');
@@ -711,6 +790,34 @@ function setupEventListeners() {
             UI.get('hintBtn2')?.click();
         }
     });
+
+    // History modal
+    const historyBtn = document.getElementById('historyBtn');
+    const historyModal = document.getElementById('historyModal');
+    const historyBackdrop = document.getElementById('historyBackdrop');
+
+    historyBtn?.addEventListener('click', () => {
+        SessionHistory.render();
+        historyModal.classList.add('show');
+        historyModal.setAttribute('aria-hidden', 'false');
+    });
+
+    const closeHistoryModal = () => {
+        historyModal.classList.remove('show');
+        historyModal.setAttribute('aria-hidden', 'true');
+    };
+
+    document.getElementById('historyClose')?.addEventListener('click', closeHistoryModal);
+    document.getElementById('historyCloseBtn')?.addEventListener('click', closeHistoryModal);
+    historyBackdrop?.addEventListener('click', closeHistoryModal);
+
+    document.getElementById('historyClear')?.addEventListener('click', () => {
+        if (confirm('Очистить всю историю сессий?')) {
+            SessionHistory.clear();
+            SessionHistory.render();
+            UI.showToast('История очищена', 'info');
+        }
+    });
 }
 
 function renderFileTabs() {
@@ -778,6 +885,11 @@ function startNewGame() {
 
     // Start timer
     GameState.startTimer(() => UI.updateStats());
+
+    // Animate console on new game
+    const consoleBox = UI.get('consoleBox');
+    consoleBox.classList.remove('loaded');
+    setTimeout(() => consoleBox.classList.add('loaded'), 100);
 
     // Render first task
     if (GameState.deck.length > 0) {
