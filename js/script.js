@@ -1113,14 +1113,6 @@ function setupEventListeners() {
     document.getElementById('historyClose')?.addEventListener('click', closeHistoryModal);
     document.getElementById('historyCloseBtn')?.addEventListener('click', closeHistoryModal);
     historyBackdrop?.addEventListener('click', closeHistoryModal);
-
-    document.getElementById('historyClear')?.addEventListener('click', () => {
-        if (confirm('Очистить всю историю сессий?')) {
-            SessionHistory.clear();
-            SessionHistory.render();
-            UI.showToast('История очищена', 'info');
-        }
-    });
 }
 
 function renderFileTabs() {
