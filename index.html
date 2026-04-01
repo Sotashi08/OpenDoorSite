@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SafeCode Lab</title>
     <link rel="stylesheet" href="css/style.css"/>
-    <link href="img/favicon.ico" rel="icon" type="image/x-icon">
+    <link href="img/favicon.ico" rel="shortcut icon" type="image/x-icon" />
     <script defer src="js/script.js"></script>
 </head>
 <body>
@@ -174,18 +174,6 @@
 </div>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
-<div class="modal" id="restartModal" aria-hidden="true" role="dialog" aria-label="Подтверждение перезапуска">
-    <div class="modal-backdrop" id="restartBackdrop" aria-hidden="true"></div>
-    <div class="modal-panel card" role="document">
-        <div class="panel-title">Начать заново?</div>
-        <p class="modal-text">Текущий прогресс будет сброшен.</p>
-        <div class="modal-actions">
-            <button class="soft-btn" id="restartCancel" type="button">Отмена</button>
-            <button class="soft-btn danger" id="restartConfirm" type="button">Сбросить</button>
-        </div>
-    </div>
-</div>
-
 <div class="modal" id="diagnosticsModal" aria-hidden="true" role="dialog" aria-label="Диагностика системы">
     <div class="modal-backdrop" id="diagnosticsBackdrop" aria-hidden="true"></div>
     <div class="modal-panel diagnostics-panel card" role="document">
@@ -339,8 +327,41 @@
             <div class="history-list" id="historyList"></div>
         </div>
         <div class="history-footer">
-            <button class="soft-btn danger" id="historyClear">Очистить историю</button>
+            <button class="soft-btn" id="historyClear">Очистить</button>
             <button class="soft-btn" id="historyCloseBtn">Закрыть</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="restartConfirmModal" aria-hidden="true" role="dialog" aria-label="Подтверждение перезапуска">
+    <div class="modal-backdrop" id="restartConfirmBackdrop" aria-hidden="true"></div>
+    <div class="modal-panel card" role="document">
+        <h2 class="panel-title">Начать заново?</h2>
+        <p class="modal-text">
+            Текущая сессия будет прервана и сохранена в истории. Вы уверены, что хотите начать новую сессию?
+        </p>
+        <div class="modal-actions">
+            <button class="soft-btn" id="restartCancelBtn">Отмена</button>
+            <button class="soft-btn danger" id="restartConfirmBtn">Начать заново</button>
+        </div>
+    </div>
+</div>
+
+<!-- Secret Developer Terminal -->
+<div class="terminal-overlay" id="terminalOverlay" role="dialog" aria-label="Секретный терминал">
+    <div class="terminal-window" role="document">
+        <div class="terminal-header">
+            <div class="terminal-title">SafeCode Terminal</div>
+            <button class="terminal-close" id="terminalClose">&times;</button>
+        </div>
+        <div class="terminal-body">
+            <div class="terminal-output" id="terminalOutput"></div>
+            <div class="terminal-input-area">
+                <div class="terminal-input-line">
+                    <span>></span>
+                    <input type="text" class="terminal-input" id="terminalInput" placeholder="Команда..." autocomplete="off">
+                </div>
+            </div>
         </div>
     </div>
 </div>

@@ -65,6 +65,291 @@ class ThemeManager {
     }
 }
 
+// ===== SECRET DEVELOPER TERMINAL =====
+class SecretTerminal {
+    static COMMANDS = {
+        help: 'Список команд',
+        clear: '🧹 Очистить терминал',
+        scan: '🔍 Сканирование портов',
+        hash: '🔐 Генератор хешей',
+        passgen: '🎲 Генератор паролей',
+        whois: '🌐 WHOIS (напр. whois google.com)',
+        encrypt: '🛡️ Шифровать текст (Base64)',
+        decrypt: '🔓 Расшифровать текст (Base64)',
+        rot1: '🔀 Шифрование ROT1',
+        derot1: '🔓 Расшифровка ROT1',
+        tips: '💡 Советы по ИБ',
+        matrix: '🟢 Матрица (анимация)',
+        exit: 'Выход'
+    };
+
+    static cheatUsed = false;
+    static cheatActive = false;
+
+    static init() {
+        this.setupTriggers();
+    }
+
+    static setupTriggers() {
+        document.querySelector('.brand')?.addEventListener('click', () => this.open());
+
+        document.addEventListener('keydown', (e) => {
+            if (e.ctrlKey && e.shiftKey && e.key === 'S') {
+                e.preventDefault();
+                this.open();
+            }
+        });
+
+        document.getElementById('terminalClose')?.addEventListener('click', () => this.close());
+        document.getElementById('terminalInput')?.addEventListener('keydown', (e) => this.handleInput(e));
+    }
+
+    static open() {
+        const overlay = document.getElementById('terminalOverlay');
+        overlay.classList.add('show');
+        overlay.setAttribute('aria-hidden', 'false');
+        document.getElementById('terminalInput')?.focus();
+        this.printWelcome();
+    }
+
+    static close() {
+        const overlay = document.getElementById('terminalOverlay');
+        overlay.classList.remove('show');
+        overlay.setAttribute('aria-hidden', 'true');
+    }
+
+    static printWelcome() {
+        const output = document.getElementById('terminalOutput');
+        output.innerHTML = `<div class="terminal-line info">╔═══════════════════════════════════════════════╗</div>
+<div class="terminal-line info">║     🛡️ SafeCode Terminal v2.0                 ║</div>
+<div class="terminal-line info">║     Cybersecurity Tools & Utilities            ║</div>
+<div class="terminal-line info">╚═══════════════════════════════════════════════╝</div>
+<div class="terminal-line info">Введите 'help' для списка команд</div>
+<div class="terminal-line"></div>`;
+    }
+
+    static handleInput(e) {
+        const input = e.target;
+
+        if (e.key === 'Enter') {
+            const cmdText = input.value.trim();
+            if (cmdText) {
+                this.addToHistory(cmdText);
+                this.execute(cmdText);
+            }
+            input.value = '';
+        }
+
+        if (e.key === 'Tab') {
+            e.preventDefault();
+            const partial = input.value.toLowerCase();
+            const matches = Object.keys(this.COMMANDS).filter(c => c.startsWith(partial));
+            if (matches.length === 1) input.value = matches[0];
+        }
+
+        if (e.key === 'ArrowUp') { e.preventDefault(); this.navigateHistory(input, -1); }
+        if (e.key === 'ArrowDown') { e.preventDefault(); this.navigateHistory(input, 1); }
+        if (e.key === 'Escape') this.close();
+    }
+
+    static cmdHistory = [];
+    static cmdHistoryIndex = -1;
+
+    static addToHistory(cmd) {
+        this.cmdHistory.unshift(cmd);
+        if (this.cmdHistory.length > 20) this.cmdHistory.pop();
+        this.cmdHistoryIndex = -1;
+    }
+
+    static navigateHistory(input, dir) {
+        if (!this.cmdHistory.length) return;
+        this.cmdHistoryIndex = Math.max(-1, Math.min(this.cmdHistory.length - 1, this.cmdHistoryIndex + dir));
+        input.value = this.cmdHistoryIndex >= 0 ? this.cmdHistory[this.cmdHistoryIndex] : '';
+    }
+
+    static execute(fullCmd) {
+        const output = document.getElementById('terminalOutput');
+        output.innerHTML += `<div class="terminal-line cmd">$ ${escapeHtml(fullCmd)}</div>`;
+
+        const parts = fullCmd.split(/\s+/);
+        const cmd = parts[0].toLowerCase();
+        const args = parts.slice(1);
+
+        const handlers = {
+            help: () => {
+                output.innerHTML += `<div class="terminal-line highlight">📋 Доступные команды:</div>`;
+                for (const [c, d] of Object.entries(this.COMMANDS)) {
+                    output.innerHTML += `<div class="terminal-line">  <span style="color:var(--md-sys-color-primary);font-weight:700">${c.padEnd(10)}</span> — ${d}</div>`;
+                }
+            },
+
+            clear: () => {
+                this.printWelcome();
+            },
+
+            scan: () => {
+                this.runPortScan(output);
+            },
+
+            hash: () => {
+                const hash = this.simpleHash(Date.now().toString());
+                output.innerHTML += `<div class="terminal-line success">🔐 SHA-256: ${hash}</div>`;
+                output.innerHTML += `<div class="terminal-line info">(симуляция для демонстрации)</div>`;
+            },
+
+            passgen: () => {
+                const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*';
+                let pass = '';
+                for (let i = 0; i < 16; i++) pass += chars[Math.floor(Math.random() * chars.length)];
+                output.innerHTML += `<div class="terminal-line success">🎲 Пароль: ${pass}</div>`;
+            },
+
+            whois: () => {
+                const domain = args[0] || 'safecodelab.ru';
+                output.innerHTML += `<div class="terminal-line info">🌐 WHOIS lookup для ${escapeHtml(domain)}:</div>`;
+                output.innerHTML += `<div class="terminal-line">Registrar: Domain Registrar</div>`;
+                output.innerHTML += `<div class="terminal-line">Created: 2026-01-01</div>`;
+                output.innerHTML += `<div class="terminal-line">Expires: 2027-01-01</div>`;
+                output.innerHTML += `<div class="terminal-line info">(симуляция)</div>`;
+            },
+
+            encrypt: () => {
+                const text = args.join(' ');
+                if (!text) {
+                    output.innerHTML += `<div class="terminal-line error">Использование: encrypt [текст]</div>`;
+                    return;
+                }
+                try {
+                    const encrypted = btoa(unescape(encodeURIComponent(text)));
+                    output.innerHTML += `<div class="terminal-line success">🛡️ Зашифровано (Base64): ${encrypted}</div>`;
+                } catch (e) {
+                    output.innerHTML += `<div class="terminal-line error">❌ Ошибка шифрования.</div>`;
+                }
+            },
+
+            decrypt: () => {
+                const text = args.join(' ');
+                if (!text) {
+                    output.innerHTML += `<div class="terminal-line error">Использование: decrypt [текст]</div>`;
+                    return;
+                }
+                try {
+                    const decrypted = decodeURIComponent(escape(atob(text)));
+                    output.innerHTML += `<div class="terminal-line success">🔓 Расшифровано (Base64): ${escapeHtml(decrypted)}</div>`;
+                } catch (e) {
+                    output.innerHTML += `<div class="terminal-line error">❌ Ошибка расшифровки. Неверный формат Base64.</div>`;
+                }
+            },
+
+            rot1: () => {
+                const text = args.join(' ') || 'CYBERSECURITY';
+                const encrypted = text.split('').map(c => String.fromCharCode(c.charCodeAt(0) + 1)).join('');
+                output.innerHTML += `<div class="terminal-line success">🔀 Зашифровано (ROT1): ${escapeHtml(encrypted)}</div>`;
+            },
+
+            derot1: () => {
+                const text = args.join(' ') || 'DZCFSTFDVSJUZ';
+                const decoded = text.split('').map(c => String.fromCharCode(c.charCodeAt(0) - 1)).join('');
+                output.innerHTML += `<div class="terminal-line success">🔓 Расшифровано (ROT1): ${escapeHtml(decoded)}</div>`;
+            },
+
+            tips: () => {
+                const tips = [
+                    '🔐 Используйте разные пароли для каждого аккаунта',
+                    '🔄 Включите двухфакторную аутентификацию (2FA)',
+                    '📧 Не открывайте подозрительные ссылки в письмах',
+                    '🔒 Используйте менеджер паролей',
+                    '🛡️ Регулярно обновляйте программное обеспечение',
+                    '📱 Не подключайтесь к публичным Wi-Fi без VPN',
+                    '☠️ Не скачивайте файлы с ненадёжных источников'
+                ];
+                output.innerHTML += `<div class="terminal-line highlight">💡 Рекомендации по безопасности:</div>`;
+                tips.forEach(tip => output.innerHTML += `<div class="terminal-line">${tip}</div>`);
+            },
+
+            matrix: () => {
+                this.runMatrixAnimation(output);
+            },
+
+            exit: () => this.close()
+        };
+
+        const handler = handlers[cmd];
+        if (handler) {
+            handler();
+        } else {
+            output.innerHTML += `<div class="terminal-line error">❌ Неизвестная команда: ${escapeHtml(cmd)}</div>`;
+        }
+
+        output.scrollTop = output.scrollHeight;
+    }
+
+    static simpleHash(str) {
+        let hash = '';
+        for (let i = 0; i < 64; i++) {
+            hash += '0123456789abcdef'[Math.floor(Math.random() * 16)];
+        }
+        return hash;
+    }
+
+    static runPortScan(output) {
+        output.innerHTML += `<div class="terminal-line info">🔍 Сканирование портов...</div>`;
+
+        const ports = [21, 22, 23, 25, 53, 80, 110, 143, 443, 465, 587, 993, 995, 3306, 3389, 5432, 8080];
+        const openPorts = ports.filter(() => Math.random() > 0.7);
+
+        let i = 0;
+        const interval = setInterval(() => {
+            if (i >= ports.length) {
+                clearInterval(interval);
+                if (openPorts.length === 0) {
+                    output.innerHTML += `<div class="terminal-line">Открытых портов не обнаружено</div>`;
+                } else {
+                    output.innerHTML += `<div class="terminal-line success">✅ Открытые порты: ${openPorts.join(', ')}</div>`;
+                }
+                output.scrollTop = output.scrollHeight;
+                return;
+            }
+            output.innerHTML += `<div class="terminal-line" style="opacity:0.5">Проверка порта ${ports[i]}...</div>`;
+            output.scrollTop = output.scrollHeight;
+            i++;
+        }, 100);
+    }
+
+    static runMatrixAnimation(output) {
+        output.innerHTML += `<div class="terminal-line" style="color:#0f0;text-shadow:0 0 10px #0f0">🟢 Активация матрицы...</div>`;
+
+        const chars = '01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホ';
+        const lines = [];
+        const cols = 20;
+
+        for (let i = 0; i < 30; i++) {
+            let line = '';
+            for (let j = 0; j < cols; j++) {
+                if (Math.random() > 0.3) {
+                    line += chars[Math.floor(Math.random() * chars.length)] + ' ';
+                } else {
+                    line += '   ';
+                }
+            }
+            lines.push(line);
+        }
+
+        let i = 0;
+        const interval = setInterval(() => {
+            if (i >= lines.length) {
+                clearInterval(interval);
+                output.innerHTML += `<div class="terminal-line success">✅ Матрица завершена</div>`;
+                output.scrollTop = output.scrollHeight;
+                return;
+            }
+            output.innerHTML += `<div class="terminal-line matrix-anim" style="color:#0f0;font-family:monospace;font-size:11px">${lines[i]}</div>`;
+            output.scrollTop = output.scrollHeight;
+            i++;
+        }, 80);
+    }
+}
+
 // ===== SESSION HISTORY =====
 class SessionHistory {
     static STORAGE_KEY = 'safeCodeHistory';
@@ -113,8 +398,14 @@ class SessionHistory {
             const seconds = session.time % 60;
             const timeStr = `${minutes}:${seconds.toString().padStart(2, '0')}`;
 
+            const isAbandoned = session.status === 'abandoned';
+            const isCompleted = session.status === 'completed';
+            const statusBadge = isAbandoned
+                ? '<span class="history-status-failed">❌ Прервано</span>'
+                : (isCompleted ? '<span class="history-status-completed">✅ Выполнено</span>' : '');
+
             return `
-            <div class="history-item">
+            <div class="history-item ${isAbandoned ? 'history-item-abandoned' : ''} ${isCompleted ? 'history-item-completed' : ''}">
                 <div class="history-item-header">
                     <span class="history-item-date">${dateStr}</span>
                     <span class="history-item-score">${session.score} очков</span>
@@ -125,6 +416,7 @@ class SessionHistory {
                     <span>💡 ${session.hintsUsed}</span>
                     <span>⏱ ${timeStr}</span>
                     ${session.perfectStreak > 0 ? `<span>⭐ ${session.perfectStreak}</span>` : ''}
+                    ${statusBadge}
                 </div>
             </div>
         `;
@@ -612,7 +904,7 @@ const ResultScreen = {
         const total = GameState.deck.length;
         const accuracy = Math.round((GameState.correctCount / total) * 100);
 
-        // Save session to history
+        // Save session to history (completed)
         SessionHistory.save({
             date: new Date().toISOString(),
             score: GameState.score,
@@ -621,7 +913,8 @@ const ResultScreen = {
             accuracy: accuracy,
             hintsUsed: GameState.hintsUsed,
             perfectStreak: GameState.perfectStreak,
-            time: GameState.startTime ? Math.round((Date.now() - GameState.startTime) / 1000) : 0
+            time: GameState.startTime ? Math.round((Date.now() - GameState.startTime) / 1000) : 0,
+            status: 'completed'
         });
 
         // Hide game, show result
@@ -676,6 +969,9 @@ function initGame() {
     const fileManager = new FileManager();
     fileManager.init();
 
+    // Initialize secret terminal
+    SecretTerminal.init();
+
     // Setup event listeners
     setupEventListeners();
 
@@ -693,35 +989,42 @@ function setupEventListeners() {
     });
 
     // Restart buttons
-    const restartHandler = () => {
-        const modal = document.getElementById('restartModal');
-        if (!modal) return startNewGame();
-        modal.classList.add('show');
-        modal.setAttribute('aria-hidden', 'false');
-        document.getElementById('restartConfirm')?.focus();
-    };
+    const restartModal = document.getElementById('restartConfirmModal');
+    const restartConfirmBtn = document.getElementById('restartConfirmBtn');
+    const restartCancelBtn = document.getElementById('restartCancelBtn');
 
-    UI.get('restartBtn')?.addEventListener('click', restartHandler);
-    UI.get('againBtn')?.addEventListener('click', restartHandler);
+    UI.get('restartBtn')?.addEventListener('click', () => {
+        restartModal.classList.add('show');
+        restartModal.setAttribute('aria-hidden', 'false');
+    });
 
-    // Restart modal actions
-    const closeRestartModal = () => {
-        const modal = document.getElementById('restartModal');
-        if (!modal) return;
-        modal.classList.remove('show');
-        modal.setAttribute('aria-hidden', 'true');
-    };
-    document.getElementById('restartCancel')?.addEventListener('click', closeRestartModal);
-    document.getElementById('restartBackdrop')?.addEventListener('click', closeRestartModal);
-    document.getElementById('restartConfirm')?.addEventListener('click', () => {
-        closeRestartModal();
+    restartCancelBtn?.addEventListener('click', () => {
+        restartModal.classList.remove('show');
+        restartModal.setAttribute('aria-hidden', 'true');
+    });
+
+    restartConfirmBtn?.addEventListener('click', () => {
+        const total = GameState.deck.length;
+        const accuracy = GameState.currentIndex > 0 ? Math.round((GameState.correctCount / GameState.currentIndex) * 100) : 0;
+
+        SessionHistory.save({
+            date: new Date().toISOString(),
+            score: GameState.score,
+            correct: GameState.correctCount,
+            total: GameState.currentIndex,
+            accuracy: accuracy,
+            hintsUsed: GameState.hintsUsed,
+            perfectStreak: GameState.perfectStreak,
+            time: GameState.startTime ? Math.round((Date.now() - GameState.startTime) / 1000) : 0,
+            status: 'abandoned'
+        });
+
+        restartModal.classList.remove('show');
+        restartModal.setAttribute('aria-hidden', 'true');
         startNewGame();
     });
-    document.addEventListener('keydown', (e) => {
-        const modal = document.getElementById('restartModal');
-        if (!modal?.classList.contains('show')) return;
-        if (e.key === 'Escape') closeRestartModal();
-    });
+
+    UI.get('againBtn')?.addEventListener('click', () => startNewGame());
 
     // Hint buttons
     UI.get('hintBtn1')?.addEventListener('click', () => HintSystem.showHint(1));
