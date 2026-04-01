@@ -151,6 +151,8 @@
     --md-sys-shape-corner-medium: 10px;
     --md-sys-shape-corner-large: 14px;
     --md-sys-shape-corner-extra-large: 24px;
+
+
 }
 
 [data-theme="ember"] {
@@ -1215,6 +1217,7 @@ div.code-line {
 .code-line .txt {
     flex: 1;
     white-space: pre;
+    color: var(--ide-text);
 }
 
 /* Syntax highlighting */
@@ -1339,6 +1342,7 @@ div.code-line {
     gap: var(--md-sys-spacing-4);
     overflow-y: auto;
     padding-bottom: var(--md-sys-spacing-4);
+    min-height: 0;
 }
 
 .progress-card .progress-area {
@@ -1357,7 +1361,7 @@ div.code-line {
     flex: 1;
     display: flex;
     flex-direction: column;
-    min-height: 200px;
+    min-height: 150px;
 }
 
 .console {
@@ -1370,9 +1374,9 @@ div.code-line {
     padding: var(--md-sys-spacing-3);
     border-radius: var(--md-sys-shape-corner-medium);
     overflow-y: auto;
-    max-height: 200px;
     border: 1px solid var(--ide-border);
     scrollbar-gutter: stable;
+    min-height: 0;
 }
 
 /* ===== TASK SCROLL FIX (options never disappear) ===== */
