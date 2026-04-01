@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SafeCode Lab — интерактивная игра по ИБ</title>
-    <link rel="stylesheet" href="css/style.css"/>
-    <script defer src="js/script.js"></script>
+    <link rel="stylesheet" href="test.css"/>
+    <script defer src="test.js"></script>
 </head>
 <body>
 <div id="bgFeed" aria-hidden="true"></div>
@@ -178,6 +178,145 @@
         <div class="modal-actions">
             <button class="soft-btn" id="restartCancel" type="button">Отмена</button>
             <button class="soft-btn danger" id="restartConfirm" type="button">Сбросить</button>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="diagnosticsModal" aria-hidden="true" role="dialog" aria-label="Диагностика системы">
+    <div class="modal-backdrop" id="diagnosticsBackdrop" aria-hidden="true"></div>
+    <div class="modal-panel diagnostics-panel card" role="document">
+        <div class="diagnostics-header">
+            <h2 class="panel-title">🔧 Диагностика системы</h2>
+            <button class="close-btn" id="diagnosticsClose" aria-label="Закрыть">&times;</button>
+        </div>
+
+        <div id="diagnosticsProgress" class="diagnostics-progress">
+            <div class="progress-spinner"></div>
+            <div class="progress-text">Проверка панелей...</div>
+        </div>
+
+        <div id="diagnosticsResults" class="diagnostics-results hidden">
+            <div class="results-header">
+                <div class="result-title">Результаты диагностики</div>
+                <div class="result-timestamp" id="resultTimestamp"></div>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-label">Процессор</div>
+                    <div class="metric-value" id="metricCPU">0%</div>
+                    <div class="metric-bar">
+                        <div class="metric-fill cpu-fill" id="metricCPUBar" style="width: 0%"></div>
+                    </div>
+                    <div class="metric-status" id="metricCPUStatus">Нормально</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Память</div>
+                    <div class="metric-value" id="metricRAM">0%</div>
+                    <div class="metric-bar">
+                        <div class="metric-fill ram-fill" id="metricRAMBar" style="width: 0%"></div>
+                    </div>
+                    <div class="metric-status" id="metricRAMStatus">Нормально</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Диск</div>
+                    <div class="metric-value" id="metricDisk">0%</div>
+                    <div class="metric-bar">
+                        <div class="metric-fill disk-fill" id="metricDiskBar" style="width: 0%"></div>
+                    </div>
+                    <div class="metric-status" id="metricDiskStatus">Нормально</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Сеть</div>
+                    <div class="metric-value" id="metricNetwork">0%</div>
+                    <div class="metric-bar">
+                        <div class="metric-fill network-fill" id="metricNetworkBar" style="width: 0%"></div>
+                    </div>
+                    <div class="metric-status" id="metricNetworkStatus">Нормально</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Безопасность</div>
+                    <div class="metric-value" id="metricSecurity">0%</div>
+                    <div class="metric-bar">
+                        <div class="metric-fill security-fill" id="metricSecurityBar" style="width: 0%"></div>
+                    </div>
+                    <div class="metric-status" id="metricSecurityStatus">Нормально</div>
+                </div>
+
+                <div class="metric-card">
+                    <div class="metric-label">Стабильность</div>
+                    <div class="metric-value" id="metricStability">0%</div>
+                    <div class="metric-bar">
+                        <div class="metric-fill stability-fill" id="metricStabilityBar" style="width: 0%"></div>
+                    </div>
+                    <div class="metric-status" id="metricStabilityStatus">Нормально</div>
+                </div>
+            </div>
+
+            <div class="diagnostics-summary">
+                <div class="summary-title">Игровая статистика</div>
+                <div class="summary-grid">
+                    <div class="summary-item">
+                        <span>Правильных ответов:</span>
+                        <strong id="summaryCorrect">0/0</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>Точность:</span>
+                        <strong id="summaryAccuracy">0%</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>Использованные подсказки:</span>
+                        <strong id="summaryHints">0</strong>
+                    </div>
+                    <div class="summary-item">
+                        <span>Время игры:</span>
+                        <strong id="summaryTime">00:00</strong>
+                    </div>
+                </div>
+            </div>
+
+            <div class="diagnostics-footer">
+                <button class="soft-btn" id="diagnosticsCloseBtn">Закрыть</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal" id="fileModal" aria-hidden="true" role="dialog" aria-label="Просмотр файла">
+    <div class="modal-backdrop" id="fileBackdrop" aria-hidden="true"></div>
+    <div class="modal-panel file-modal-panel card" role="document">
+        <div class="file-modal-header">
+            <div>
+                <h2 class="panel-title" id="fileModalTitle">auth.py</h2>
+                <div class="file-modal-info" id="fileModalInfo">Python • 45 строк</div>
+            </div>
+            <button class="close-btn" id="fileModalClose" aria-label="Закрыть">&times;</button>
+        </div>
+
+        <div class="file-modal-content">
+            <div class="file-description" id="fileDescription"></div>
+            <div class="code-shell">
+                <div class="code-toolbar">
+                    <div class="code-toolbar-left">
+                        <span class="code-window-dots" aria-hidden="true">
+                            <span class="dot dot-red"></span>
+                            <span class="dot dot-yellow"></span>
+                            <span class="dot dot-green"></span>
+                        </span>
+                        <span class="code-filename" id="fileModalFilename">auth.py</span>
+                    </div>
+                    <span class="code-meta" id="fileModalMeta">UTF-8</span>
+                </div>
+                <div class="code-block" id="fileModalCode" role="list"></div>
+            </div>
+        </div>
+
+        <div class="file-modal-footer">
+            <button class="soft-btn" id="fileModalCloseBtn">Закрыть</button>
         </div>
     </div>
 </div>

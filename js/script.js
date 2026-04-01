@@ -589,6 +589,14 @@ function initGame() {
     // Initialize theme system
     themeManager = new ThemeManager();
 
+    // Initialize diagnostics system
+    const diagnostics = new DiagnosticsManager();
+    diagnostics.init();
+
+    // Initialize file manager system
+    const fileManager = new FileManager();
+    fileManager.init();
+
     // Setup event listeners
     setupEventListeners();
 
@@ -720,8 +728,8 @@ function renderFileTabs() {
     </button>
   `).join('');
 
-    // Set initial preview
-    preview.textContent = fileTabsData[0].preview;
+    // Set initial info preview
+    preview.innerHTML = getFileInfoPanel(fileTabsData[0].name);
 
     // Add tab click handlers
     tabs.querySelectorAll('.tab-btn').forEach(btn => {
@@ -730,15 +738,37 @@ function renderFileTabs() {
             tabs.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
 
-            // Update preview
+            // Update info panel
             const fileName = btn.dataset.file;
-            const file = fileTabsData.find(f => f.name === fileName);
-            if (file) {
-                preview.textContent = file.preview;
-                UI.logConsole(`📄 Открыт файл: ${fileName}`);
-            }
+            preview.innerHTML = getFileInfoPanel(fileName);
+            UI.logConsole(`📄 Выбран файл: ${fileName} (кликните для открытия)`);
         });
     });
+}
+
+function getFileInfoPanel(fileName) {
+    const fileInfo = {
+        'auth.py': { lines: 45, size: '1.2 KB', language: 'Python', description: 'Хеширует пароли и управляет сессиями' },
+        'api.py': { lines: 52, size: '1.8 KB', language: 'Python', description: 'Проверяет токены и раздает права' },
+        'config.py': { lines: 28, size: '0.9 KB', language: 'Python', description: 'Хранит настройки приложения' },
+        'database.py': { lines: 38, size: '1.1 KB', language: 'Python', description: 'Работает с базой данных' },
+        'middleware.py': { lines: 35, size: '1.0 KB', language: 'Python', description: 'Проверяет данные и пишет логи' },
+        'security.py': { lines: 42, size: '1.3 KB', language: 'Python', description: 'Защищает от XSS и CSRF' },
+        'utils.py': { lines: 30, size: '0.8 KB', language: 'Python', description: 'Вспомогательные функции' }
+    };
+
+    const info = fileInfo[fileName] || { lines: 0, size: '0 KB', language: 'Unknown', description: 'Неизвестный файл' };
+
+    return `<div class="file-info-panel">
+        <div class="file-info-header">📋 ${escapeHtml(fileName)}</div>
+        <div class="file-info-desc">📝 ${escapeHtml(info.description)}</div>
+        <div class="file-info-stats">
+            <span>📊 ${info.lines} строк</span>
+            <span>💾 ${info.size}</span>
+            <span>🔤 ${info.language}</span>
+        </div>
+        <div class="file-info-hint">👆 Нажмите для просмотра кода</div>
+    </div>`;
 }
 
 function startNewGame() {
@@ -761,15 +791,31 @@ function startNewGame() {
 const fileTabsData = [
     {
         name: 'auth.py',
-        preview: 'def login(user, password):\n    # Проверка учетных данных\n    if password == "admin123":\n        return True\n    return False'
+        preview: 'def hash_password(password):\n    salt = secrets.token_hex(16)\n    hashed = hashlib.pbkdf2_hmac(...)\n    return f"{salt}${hashed.hex()}"'
     },
     {
         name: 'api.py',
-        preview: 'def get_user_data(user_id):\n    # Получение данных пользователя\n    query = "SELECT * FROM users WHERE id = " + user_id\n    return db.execute(query)'
+        preview: 'def require_auth(f):\n    @wraps(f)\n    def decorated(*args):\n        token = request.headers.get("Authorization")\n        if not verify_token(token):\n            return 401'
     },
     {
         name: 'config.py',
-        preview: '# Конфигурация приложения\nAPI_KEY = "sk-1234567890abcdef"\nDB_PASSWORD = "root123"\nDEBUG = True'
+        preview: 'class Config:\n    SECRET_KEY = os.getenv("SECRET_KEY")\n    DATABASE_URL = os.getenv("DATABASE_URL")\n    JWT_ALGORITHM = "HS256"'
+    },
+    {
+        name: 'database.py',
+        preview: 'def execute(self, query, params=()):\n    with self.get_connection() as conn:\n        cursor = conn.cursor()\n        cursor.execute(query, params)'
+    },
+    {
+        name: 'middleware.py',
+        preview: 'def validate_input(required_fields):\n    def decorator(f):\n        for field in required_fields:\n            if field not in data:\n                return 400'
+    },
+    {
+        name: 'security.py',
+        preview: 'def sanitize_html(text):\n    return html.escape(text)\n\ndef validate_password(password):\n    if len(password) < 12: return False'
+    },
+    {
+        name: 'utils.py',
+        preview: 'def get_timestamp():\n    return datetime.utcnow().isoformat()\n\ndef format_date(date_obj):\n    return date_obj.strftime("%d.%m.%Y")'
     }
 ];
 
@@ -969,6 +1015,453 @@ const allTasks = [
         explanation: 'Отсутствует rate limiting для попыток входа, что позволяет проводить brute force атаки.'
     }
 ];
+
+// ===== DIAGNOSTICS SYSTEM =====
+class DiagnosticsManager {
+    constructor() {
+        this.modal = document.getElementById('diagnosticsModal');
+        this.backdrop = document.getElementById('diagnosticsBackdrop');
+        this.progressDiv = document.getElementById('diagnosticsProgress');
+        this.resultsDiv = document.getElementById('diagnosticsResults');
+        this.scanBtn = document.getElementById('scanBtn');
+        this.closeBtn = document.getElementById('diagnosticsClose');
+        this.closeResultsBtn = document.getElementById('diagnosticsCloseBtn');
+    }
+
+    init() {
+        this.scanBtn?.addEventListener('click', () => this.startDiagnostics());
+        this.closeBtn?.addEventListener('click', () => this.closeDiagnostics());
+        this.closeResultsBtn?.addEventListener('click', () => this.closeDiagnostics());
+        this.backdrop?.addEventListener('click', () => this.closeDiagnostics());
+    }
+
+    startDiagnostics() {
+        this.modal.classList.add('show');
+        this.progressDiv.classList.remove('hidden');
+        this.resultsDiv.classList.add('hidden');
+        UI.logConsole('🔧 Начало диагностики системы...');
+
+        // Симулируем проверку панелей с задержками
+        setTimeout(() => this.runDiagnostics(), 500);
+    }
+
+    async runDiagnostics() {
+        const checks = [
+            { name: 'Проверка консоли', delay: 600 },
+            { name: 'Проверка прогресса', delay: 400 },
+            { name: 'Проверка подсказок', delay: 500 },
+            { name: 'Анализ игровых данных', delay: 700 },
+            { name: 'Сканирование системы', delay: 800 }
+        ];
+
+        for (const check of checks) {
+            await this.sleep(check.delay);
+            UI.logConsole(`✓ ${check.name}`);
+        }
+
+        await this.sleep(500);
+        this.showResults();
+    }
+
+    sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    showResults() {
+        this.progressDiv.classList.add('hidden');
+        this.resultsDiv.classList.remove('hidden');
+
+        // Генерируем метрики на основе игровой статистики
+        const metrics = this.generateMetrics();
+        this.animateMetrics(metrics);
+        this.updateSummary();
+
+        UI.logConsole('✓ Диагностика завершена');
+        UI.showToast('Диагностика завершена', 'success');
+    }
+
+    generateMetrics() {
+        // Получаем данные из состояния игры
+        const totalAnswered = GameState.currentIndex;
+        const accuracy = totalAnswered > 0 ? (GameState.correctCount / totalAnswered * 100) : 0;
+        const hintPercentage = Math.min(GameState.hintsUsed * 15, 95);
+
+        // Генерируем фейковую статистику на основе игровых данных
+        const elapsedTime = GameState.startTime ? (Date.now() - GameState.startTime) / 1000 : 0;
+        const networkLoad = Math.min((elapsedTime / 300) * 100, 95);
+
+        return {
+            cpu: Math.max(20, Math.min(accuracy * 0.7 + (100 - accuracy) * 0.5, 85)),
+            ram: Math.max(15, Math.min(hintPercentage * 0.8, 80)),
+            disk: Math.random() * 40 + 45, // Стабильное значение 45-85%
+            network: Math.min(networkLoad + Math.random() * 10, 90),
+            security: accuracy * 0.9 + 10, // Зависит от правильности ответов
+            stability: Math.max(70, 100 - (hintPercentage * 0.3) - ((100 - accuracy) * 0.2))
+        };
+    }
+
+    animateMetrics(metrics) {
+        const metricsMap = [
+            { id: 'CPU', key: 'cpu' },
+            { id: 'RAM', key: 'ram' },
+            { id: 'Disk', key: 'disk' },
+            { id: 'Network', key: 'network' },
+            { id: 'Security', key: 'security' },
+            { id: 'Stability', key: 'stability' }
+        ];
+
+        metricsMap.forEach(metric => {
+            const value = Math.round(metrics[metric.key]);
+            const element = document.getElementById(`metric${metric.id}`);
+            const bar = document.getElementById(`metric${metric.id}Bar`);
+            const status = document.getElementById(`metric${metric.id}Status`);
+
+            if (element) {
+                // Анимируем значение
+                this.animateValue(element, value, 1000);
+                this.animateBar(bar, value, 1000);
+
+                // Определяем статус
+                let statusText = 'Нормально';
+                let statusClass = 'normal';
+                if (value > 75) {
+                    statusText = 'Высокая нагрузка';
+                    statusClass = 'warning';
+                } else if (value > 90) {
+                    statusText = 'Критическое';
+                    statusClass = 'critical';
+                }
+
+                if (status) {
+                    status.textContent = statusText;
+                    status.className = `metric-status ${statusClass}`;
+                }
+            }
+        });
+
+        // Обновляем timestamp
+        const timestamp = document.getElementById('resultTimestamp');
+        if (timestamp) {
+            const now = new Date();
+            timestamp.textContent = now.toLocaleTimeString('ru-RU');
+        }
+    }
+
+    animateValue(element, targetValue, duration) {
+        const startValue = 0;
+        const startTime = Date.now();
+
+        const update = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const currentValue = Math.round(startValue + (targetValue - startValue) * progress);
+            element.textContent = currentValue + '%';
+
+            if (progress < 1) {
+                requestAnimationFrame(update);
+            }
+        };
+
+        requestAnimationFrame(update);
+    }
+
+    animateBar(element, targetValue, duration) {
+        const startTime = Date.now();
+
+        const update = () => {
+            const elapsed = Date.now() - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const currentValue = targetValue * progress;
+            element.style.width = currentValue + '%';
+
+            if (progress < 1) {
+                requestAnimationFrame(update);
+            }
+        };
+
+        requestAnimationFrame(update);
+    }
+
+    updateSummary() {
+        const totalAnswered = GameState.currentIndex;
+        const correct = GameState.correctCount;
+        const accuracy = totalAnswered > 0 ? Math.round((correct / totalAnswered) * 100) : 0;
+        const elapsedTime = GameState.startTime ? Math.floor((Date.now() - GameState.startTime) / 1000) : 0;
+        const minutes = Math.floor(elapsedTime / 60);
+        const seconds = elapsedTime % 60;
+
+        document.getElementById('summaryCorrect').textContent = `${correct}/${totalAnswered}`;
+        document.getElementById('summaryAccuracy').textContent = `${accuracy}%`;
+        document.getElementById('summaryHints').textContent = GameState.hintsUsed;
+        document.getElementById('summaryTime').textContent =
+            `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+
+    closeDiagnostics() {
+        this.modal.classList.remove('show');
+        this.progressDiv.classList.remove('hidden');
+        this.resultsDiv.classList.add('hidden');
+    }
+}
+
+// ===== FILE MANAGER SYSTEM =====
+class FileManager {
+    constructor() {
+        this.files = {
+            'auth.py': {
+                language: 'Python',
+                lines: 30,
+                description: 'Хеширует пароли и управляет сессиями',
+                content: [
+                    'import hashlib',
+                    'import secrets',
+                    'from datetime import datetime, timedelta',
+                    '',
+                    'class AuthManager:',
+                    '    def __init__(self):',
+                    '        self.sessions = {}',
+                    '',
+                    '    def hash_password(self, password: str) -> str:',
+                    '        salt = secrets.token_hex(16)',
+                    '        hashed = hashlib.pbkdf2_hmac(',
+                    '            "sha256", password.encode(),',
+                    '            bytes.fromhex(salt), 100000)',
+                    '        return f"{salt}${hashed.hex()}"',
+                    '',
+                    '    def verify_password(self, password: str, hash_val: str):',
+                    '        salt, hashed = hash_val.split("$")',
+                    '        new_hash = self.hash_password(password)',
+                    '        return new_hash[len(salt)+1:] == hashed'
+                ]
+            },
+            'api.py': {
+                language: 'Python',
+                lines: 24,
+                description: 'Проверяет токены и раздает права',
+                content: [
+                    'from flask import Flask, request, jsonify',
+                    'from functools import wraps',
+                    '',
+                    'app = Flask(__name__)',
+                    '',
+                    'def require_auth(f):',
+                    '    @wraps(f)',
+                    '    def decorated(*args, **kwargs):',
+                    '        token = request.headers.get("Authorization")',
+                    '        if not token or not verify_token(token):',
+                    '            return {"error": "Unauthorized"}, 401',
+                    '        return f(*args, **kwargs)',
+                    '    return decorated',
+                    '',
+                    '@app.route("/api/login", methods=["POST"])',
+                    'def login():',
+                    '    data = request.get_json()',
+                    '    user = find_user(data.get("username"))',
+                    '    if not user: return {"error": "Invalid"}, 401',
+                    '    token = create_session(user["id"])',
+                    '    return {"token": token}, 200'
+                ]
+            },
+            'config.py': {
+                language: 'Python',
+                lines: 18,
+                description: 'Хранит настройки приложения',
+                content: [
+                    'import os',
+                    'from dotenv import load_dotenv',
+                    '',
+                    'load_dotenv()',
+                    '',
+                    'class Config:',
+                    '    SECRET_KEY = os.getenv("SECRET_KEY")',
+                    '    DATABASE_URL = os.getenv("DATABASE_URL")',
+                    '    JWT_ALGORITHM = "HS256"',
+                    '',
+                    'class DevConfig(Config):',
+                    '    DEBUG = True',
+                    '',
+                    'class ProdConfig(Config):',
+                    '    DEBUG = False'
+                ]
+            },
+            'database.py': {
+                language: 'Python',
+                lines: 20,
+                description: 'Работает с базой данных',
+                content: [
+                    'import sqlite3',
+                    'from contextlib import contextmanager',
+                    '',
+                    'class Database:',
+                    '    def __init__(self, db_path):',
+                    '        self.db_path = db_path',
+                    '',
+                    '    @contextmanager',
+                    '    def get_connection(self):',
+                    '        conn = sqlite3.connect(self.db_path)',
+                    '        try:',
+                    '            yield conn',
+                    '        finally:',
+                    '            conn.close()',
+                    '',
+                    '    def execute(self, query, params=()):',
+                    '        with self.get_connection() as conn:',
+                    '            cursor = conn.cursor()',
+                    '            cursor.execute(query, params)'
+                ]
+            },
+            'middleware.py': {
+                language: 'Python',
+                lines: 22,
+                description: 'Проверяет данные и пишет логи',
+                content: [
+                    'import time',
+                    'from functools import wraps',
+                    '',
+                    'def validate_input(required_fields):',
+                    '    def decorator(f):',
+                    '        @wraps(f)',
+                    '        def wrapper(*args, **kwargs):',
+                    '            data = request.get_json()',
+                    '            for field in required_fields:',
+                    '                if field not in data:',
+                    '                    return {"error": f"Missing {field}"}, 400',
+                    '            return f(*args, **kwargs)',
+                    '        return wrapper',
+                    '    return decorator',
+                    '',
+                    'def log_request(f):',
+                    '    @wraps(f)',
+                    '    def wrapper(*args, **kwargs):',
+                    '        start = time.time()',
+                    '        result = f(*args, **kwargs)',
+                    '        return result'
+                ]
+            },
+            'security.py': {
+                language: 'Python',
+                lines: 26,
+                description: 'Защищает от XSS и CSRF',
+                content: [
+                    'import html',
+                    'import re',
+                    '',
+                    'class SecurityUtils:',
+                    '    @staticmethod',
+                    '    def sanitize_html(text):',
+                    '        return html.escape(text)',
+                    '',
+                    '    @staticmethod',
+                    '    def validate_email(email):',
+                    '        pattern = r"^[\\w\\.-]+@[\\w\\.-]+\\.\\w+$"',
+                    '        return re.match(pattern, email)',
+                    '',
+                    '    @staticmethod',
+                    '    def validate_password(password):',
+                    '        if len(password) < 12: return False',
+                    '        if not re.search(r"\\d", password): return False',
+                    '        if not re.search(r"[!@#$%^&*]", password):',
+                    '            return False',
+                    '        return True'
+                ]
+            },
+            'utils.py': {
+                language: 'Python',
+                lines: 20,
+                description: 'Вспомогательные функции',
+                content: [
+                    'from datetime import datetime, timedelta',
+                    'import json',
+                    '',
+                    'def get_timestamp():',
+                    '    return datetime.utcnow().isoformat()',
+                    '',
+                    'def format_date(date_obj):',
+                    '    return date_obj.strftime("%d.%m.%Y")',
+                    '',
+                    'def get_expiry_time(hours=24):',
+                    '    return datetime.utcnow() + timedelta(hours=hours)',
+                    '',
+                    'def safe_json_loads(json_str):',
+                    '    try:',
+                    '        return json.loads(json_str)',
+                    '    except json.JSONDecodeError:',
+                    '        return None'
+                ]
+            }
+        };
+
+        this.modal = document.getElementById('fileModal');
+        this.backdrop = document.getElementById('fileBackdrop');
+        this.closeBtn = document.getElementById('fileModalClose');
+        this.closeResultsBtn = document.getElementById('fileModalCloseBtn');
+    }
+
+    init() {
+        this.closeBtn?.addEventListener('click', () => this.closeFile());
+        this.closeResultsBtn?.addEventListener('click', () => this.closeFile());
+        this.backdrop?.addEventListener('click', () => this.closeFile());
+
+        // Make file tabs clickable
+        this.setupFileTabs();
+    }
+
+    setupFileTabs() {
+        const fileTabs = document.getElementById('fileTabs');
+        if (!fileTabs) return;
+
+        // Make existing tabs clickable
+        setTimeout(() => {
+            const tabs = fileTabs.querySelectorAll('button');
+            tabs.forEach(tab => {
+                tab.style.cursor = 'pointer';
+                tab.addEventListener('click', (e) => {
+                    const filename = tab.textContent.trim();
+                    this.openFile(filename);
+                });
+            });
+        }, 100);
+    }
+
+    openFile(filename) {
+        const file = this.files[filename];
+        if (!file) return;
+
+        this.modal.classList.add('show');
+        this.modal.setAttribute('aria-hidden', 'false');
+
+        document.getElementById('fileModalTitle').textContent = filename;
+        document.getElementById('fileModalFilename').textContent = filename;
+        document.getElementById('fileModalInfo').textContent =
+            `${file.language} • ${file.lines} строк`;
+
+        // Display file description
+        const descriptionDiv = document.getElementById('fileDescription');
+        if (descriptionDiv) {
+            descriptionDiv.textContent = file.description || 'Описание недоступно';
+        }
+
+        this.displayCode(file.content);
+    }
+
+    displayCode(codeLines) {
+        const codeBlock = document.getElementById('fileModalCode');
+        codeBlock.innerHTML = codeLines.map((line, index) => {
+            const lineNum = index + 1;
+            const highlighted = TaskRenderer.syntaxHighlight(line);
+            const displayLine = line || '&nbsp;';
+            return `<div class="code-line" data-line="${lineNum}">
+                <span class="ln">${lineNum}</span>
+                <span class="txt">${highlighted}</span>
+            </div>`;
+        }).join('');
+    }
+
+    closeFile() {
+        this.modal.classList.remove('show');
+        this.modal.setAttribute('aria-hidden', 'true');
+    }
+}
 
 // ===== START =====
 document.addEventListener('DOMContentLoaded', initGame);
