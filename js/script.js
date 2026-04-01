@@ -1442,7 +1442,6 @@ class FileManager {
         }
 
         this.displayCode(file.content);
-
     }
 
     displayCode(codeLines) {
