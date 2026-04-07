@@ -438,9 +438,16 @@ const GameState = {
     startTime: null,
     timerId: null,
     strictMode: false,
+    currentTaskData: null,
 
     reset() {
-        this.deck = shuffleArray([...allTasks]).slice(0, 10);
+        const alwaysTasks = allTasks.filter(t => t.always);
+        const auctionTasks = shuffleArray([...allTasks.filter(t => t.mode === 'auction')]).slice(0, 2);
+        const flowchartTasks = shuffleArray([...allTasks.filter(t => t.mode === 'flowchart')]).slice(0, 1);
+        const otherTasks = allTasks.filter(t => !t.always && t.mode !== 'auction' && t.mode !== 'flowchart');
+        const remainingSlots = Math.max(0, 10 - alwaysTasks.length - auctionTasks.length - flowchartTasks.length);
+        const randomOther = shuffleArray([...otherTasks]).slice(0, remainingSlots);
+        this.deck = shuffleArray([...alwaysTasks, ...auctionTasks, ...flowchartTasks, ...randomOther]);
         this.currentIndex = 0;
         this.score = 0;
         this.correctCount = 0;
@@ -449,6 +456,8 @@ const GameState = {
         this.answered = false;
         this.selectedLine = null;
         this.selectedAnswer = null;
+        this.currentHints = 0;
+        this.currentTaskData = {};
         this.startTime = Date.now();
         this.clearTimer();
     },
@@ -551,6 +560,7 @@ const UI = {
             finalPerfect: document.getElementById('finalPerfect'),
             finalPercent: document.getElementById('finalPercent'),
             againBtn: document.getElementById('againBtn'),
+            specialTaskContainer: document.getElementById('specialTaskContainer'),
         };
     },
 
@@ -645,6 +655,11 @@ const TaskRenderer = {
         GameState.selectedLine = null;
         GameState.selectedAnswer = null;
         GameState.currentHints = 0;
+        GameState.currentTaskData = {};
+
+        // Reset code block display
+        const codeBlock = UI.get('codeBlock');
+        codeBlock.style.display = 'block';
 
         // Show game view, hide result
         gameView.classList.remove('hidden');
@@ -654,7 +669,15 @@ const TaskRenderer = {
         UI.get('taskBadge').textContent = `Задание ${GameState.currentIndex + 1}/${GameState.deck.length}`;
         UI.get('taskTitle').textContent = task.title;
         UI.get('taskQuestion').textContent = task.question;
-        UI.get('taskType').textContent = task.mode === 'line' ? 'Клик по строке' : 'Тест';
+
+        const modeLabels = {
+            'line': 'Клик по строке',
+            'mcq': 'Тест',
+            'flowchart': 'Блок-схема',
+            'auction': 'Аукцион мер',
+            'matching': 'Соответствие'
+        };
+        UI.get('taskType').textContent = modeLabels[task.mode] || 'Тест';
         UI.get('taskMeta').textContent = task.vulnType;
 
         // Reset UI elements
@@ -671,26 +694,683 @@ const TaskRenderer = {
         UI.get('hintBtn1').disabled = false;
         UI.get('hintBtn2').disabled = false;
 
-        // Render code block
-        this.renderCode(task);
+        // Reset options container
+        const options = UI.get('options');
+        const codeShell = document.querySelector('.code-shell');
+        const specialContainer = UI.get('specialTaskContainer');
 
-        // Render options if MCQ mode
-        if (task.mode === 'mcq') {
-            this.renderOptions(task);
-            UI.get('options').style.display = 'grid';
+        // Clear and hide special container by default
+        specialContainer.innerHTML = '';
+        specialContainer.classList.remove('active');
+
+        if (task.mode === 'flowchart') {
+            codeShell.classList.add('hidden');
+            this.renderFlowchart(task, specialContainer);
+            options.style.display = 'none';
+        } else if (task.mode === 'auction') {
+            codeShell.classList.add('hidden');
+            this.renderAuction(task, specialContainer);
+            options.style.display = 'none';
+        } else if (task.mode === 'matching') {
+            codeShell.classList.add('hidden');
+            this.renderMatching(task, specialContainer);
+            options.style.display = 'none';
         } else {
-            UI.get('options').style.display = 'none';
-            UI.get('options').innerHTML = '';
+            codeShell.classList.remove('hidden');
+            this.renderCode(task);
+
+            if (task.mode === 'mcq') {
+                this.renderOptions(task);
+                options.style.display = 'grid';
+            } else {
+                options.style.display = 'none';
+                options.innerHTML = '';
+            }
         }
 
         // Add enter animation
         UI.get('taskCard').classList.remove('enter');
-        // Force reflow for animation restart
         void UI.get('taskCard').offsetWidth;
         UI.get('taskCard').classList.add('enter');
 
-        // Log and update
         UI.logConsole(`Загружено: ${task.title}`);
+        UI.updateStats();
+    },
+
+    renderFlowchart(task, container) {
+        container.classList.add('active');
+        GameState.currentTaskData = { placed: {} };
+
+        container.innerHTML = `
+            <div class="flowchart-container">
+                <div class="flowchart-title">${escapeHtml(task.proverb)}</div>
+                <div class="flowchart-instruction">🧩 Перетащите блоки из левой колонки в правую. Можно перемещать блоки между зонами и возвращать обратно!</div>
+                <div class="flowchart-wrapper">
+                    <div class="flowchart-blocks-pool" id="blocksPool"></div>
+                    <div class="flowchart-drop-zones" id="dropZones"></div>
+                </div>
+                <div class="flowchart-actions">
+                    <button class="soft-btn primary" id="flowchartCheckBtn" disabled>✓ Проверить схему</button>
+                    <button class="soft-btn" id="flowchartResetBtn">↺ Сбросить всё</button>
+                </div>
+            </div>
+        `;
+
+        const pool = container.querySelector('#blocksPool');
+        const zones = container.querySelector('#dropZones');
+        const checkBtn = container.querySelector('#flowchartCheckBtn');
+        const resetBtn = container.querySelector('#flowchartResetBtn');
+
+        // Create blocks in pool
+        task.blocks.forEach((block, idx) => {
+            const blockEl = document.createElement('div');
+            blockEl.className = `flowchart-block ${block.type}`;
+            blockEl.textContent = block.text;
+            blockEl.draggable = true;
+            blockEl.dataset.index = idx;
+            blockEl.dataset.correct = block.correctZone;
+            pool.appendChild(blockEl);
+
+            this.setupBlockDrag(blockEl, pool, zones, task, container);
+        });
+
+        // Create drop zones
+        task.zones.forEach((zone, idx) => {
+            const zoneEl = document.createElement('div');
+            zoneEl.className = 'flowchart-drop-zone';
+            zoneEl.dataset.index = idx;
+            zoneEl.innerHTML = `
+                <span class="flowchart-zone-label">${escapeHtml(zone.label)}</span>
+                <div class="flowchart-zone-slot"></div>
+            `;
+            zones.appendChild(zoneEl);
+
+            this.setupDropZone(zoneEl, pool, zones, task, container);
+        });
+
+        // Pool can receive blocks back
+        this.setupPoolDrop(pool, zones, container);
+
+        // Check button
+        checkBtn.addEventListener('click', () => {
+            if (GameState.answered) return;
+            this.checkFlowchartAnswer(task, container);
+        });
+
+        // Reset button
+        resetBtn.addEventListener('click', () => {
+            if (GameState.answered) return;
+            this.resetFlowchart(pool, zones, container);
+        });
+    },
+
+    setupBlockDrag(blockEl, pool, zones, task, container) {
+        blockEl.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', blockEl.dataset.index);
+            e.dataTransfer.effectAllowed = 'move';
+            setTimeout(() => blockEl.classList.add('dragging'), 0);
+        });
+
+        blockEl.addEventListener('dragend', () => {
+            blockEl.classList.remove('dragging');
+        });
+    },
+
+    setupDropZone(zoneEl, pool, zones, task, container) {
+        zoneEl.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            if (!zoneEl.querySelector('.flowchart-block')) {
+                zoneEl.classList.add('drag-over');
+            }
+        });
+
+        zoneEl.addEventListener('dragleave', () => {
+            zoneEl.classList.remove('drag-over');
+        });
+
+        zoneEl.addEventListener('drop', (e) => {
+            e.preventDefault();
+            zoneEl.classList.remove('drag-over');
+
+            const blockIdx = e.dataTransfer.getData('text/plain');
+            const block = document.querySelector(`.flowchart-block[data-index="${blockIdx}"]`);
+
+            if (!block) return;
+
+            // If zone already has a block, move it back to pool first
+            const existingBlock = zoneEl.querySelector('.flowchart-block');
+            if (existingBlock) {
+                pool.appendChild(existingBlock);
+                // Remove from placed data
+                Object.keys(GameState.currentTaskData.placed).forEach(key => {
+                    if (GameState.currentTaskData.placed[key] === existingBlock.dataset.index) {
+                        delete GameState.currentTaskData.placed[key];
+                    }
+                });
+            }
+
+            // Place new block
+            zoneEl.querySelector('.flowchart-zone-slot').appendChild(block);
+            zoneEl.classList.add('filled');
+            GameState.currentTaskData.placed[zoneEl.dataset.index] = blockIdx;
+
+            // Clear result styles
+            zoneEl.classList.remove('correct', 'incorrect');
+
+            this.updateFlowchartCheckBtn(container);
+        });
+    },
+
+    setupPoolDrop(pool, zones, container) {
+        pool.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        });
+
+        pool.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const blockIdx = e.dataTransfer.getData('text/plain');
+            const block = document.querySelector(`.flowchart-block[data-index="${blockIdx}"]`);
+
+            if (block) {
+                pool.appendChild(block);
+
+                // Remove from placed data and clear zone
+                Object.keys(GameState.currentTaskData.placed).forEach(zoneIdx => {
+                    if (GameState.currentTaskData.placed[zoneIdx] === blockIdx) {
+                        delete GameState.currentTaskData.placed[zoneIdx];
+                        const zone = zones.querySelector(`[data-index="${zoneIdx}"]`);
+                        if (zone) {
+                            zone.classList.remove('filled', 'correct', 'incorrect');
+                        }
+                    }
+                });
+
+                // Clear result styles from all zones
+                zones.querySelectorAll('.flowchart-drop-zone').forEach(zone => {
+                    if (!zone.querySelector('.flowchart-block')) {
+                        zone.classList.remove('filled');
+                    }
+                });
+
+                this.updateFlowchartCheckBtn(container);
+            }
+        });
+    },
+
+    updateFlowchartCheckBtn(container) {
+        const checkBtn = container.querySelector('#flowchartCheckBtn');
+        const zones = container.querySelectorAll('.flowchart-drop-zone');
+        let filledCount = 0;
+
+        zones.forEach(zone => {
+            if (zone.querySelector('.flowchart-block')) filledCount++;
+        });
+
+        if (checkBtn) {
+            checkBtn.disabled = filledCount === 0;
+        }
+    },
+
+    resetFlowchart(pool, zones, container) {
+        if (GameState.answered) return;
+
+        // Move all blocks back to pool
+        zones.querySelectorAll('.flowchart-drop-zone').forEach(zone => {
+            const block = zone.querySelector('.flowchart-block');
+            if (block) {
+                pool.appendChild(block);
+            }
+            zone.classList.remove('filled', 'correct', 'incorrect');
+        });
+
+        GameState.currentTaskData.placed = {};
+        this.updateFlowchartCheckBtn(container);
+    },
+
+    checkFlowchartAnswer(task, container) {
+        const zones = container.querySelectorAll('.flowchart-drop-zone');
+        let correctCount = 0;
+        let totalPlaced = 0;
+
+        zones.forEach((zone, idx) => {
+            const block = zone.querySelector('.flowchart-block');
+            if (block) {
+                totalPlaced++;
+                const blockCorrectZone = block.dataset.correct;
+                if (blockCorrectZone === String(idx)) {
+                    zone.classList.add('correct');
+                    zone.classList.remove('incorrect');
+                    correctCount++;
+                } else {
+                    zone.classList.add('incorrect');
+                    zone.classList.remove('correct');
+                }
+            }
+        });
+
+        const isCorrect = correctCount === task.zones.length && totalPlaced === task.zones.length;
+        const partialCorrect = correctCount > 0 && totalPlaced > 0;
+
+        // Show detailed feedback
+        let feedbackMsg = '';
+        if (isCorrect) {
+            feedbackMsg = `✅ Отлично! Все ${correctCount} блоков на правильных местах!`;
+        } else if (partialCorrect) {
+            feedbackMsg = `🤔 Правильно размещено ${correctCount} из ${totalPlaced} блоков. Попробуйте исправить ошибки!`;
+        } else {
+            feedbackMsg = `❌ Пока нет правильных размещений. Попробуйте ещё раз или сбросьте всё!`;
+        }
+
+        UI.logConsole(feedbackMsg);
+
+        // Show feedback in result area
+        let resultDiv = container.querySelector('.flowchart-result');
+        if (!resultDiv) {
+            resultDiv = document.createElement('div');
+            resultDiv.className = 'flowchart-result';
+            container.querySelector('.flowchart-container').appendChild(resultDiv);
+        }
+        resultDiv.classList.remove('hidden');
+        resultDiv.innerHTML = `
+            <div class="flowchart-result-content ${isCorrect ? 'correct' : 'incorrect'}">
+                <div class="result-header">
+                    <span class="result-emoji">${isCorrect ? '🎉' : (partialCorrect ? '💪' : '🤔')}</span>
+                    <span class="result-text">${feedbackMsg}</span>
+                </div>
+                ${!isCorrect ? `
+                <div class="result-details">
+                    <span class="detail-correct">✓ Верно: ${correctCount}</span>
+                    <span class="detail-wrong">✗ Неверно: ${totalPlaced - correctCount}</span>
+                    <span class="detail-empty">○ Не заполнено: ${task.zones.length - totalPlaced}</span>
+                </div>
+                ` : ''}
+            </div>
+        `;
+
+        // Mark as answered only if all correct or user placed everything
+        if (isCorrect || totalPlaced === task.zones.length) {
+            GameState.answered = true;
+
+            if (isCorrect) {
+                GameState.correctCount++;
+                const points = GameState.calculatePoints(GameState.currentHints || 0);
+                GameState.score += points;
+                if ((GameState.currentHints || 0) === 0) GameState.perfectStreak++;
+                UI.logConsole(`✅ Блок-схема верна! +${points} очков`);
+            } else {
+                UI.logConsole(`❌ Блок-схема: ${correctCount}/${task.zones.length} верных`);
+            }
+
+            container.querySelector('#flowchartCheckBtn').disabled = true;
+            container.querySelector('#flowchartResetBtn').disabled = true;
+            UI.get('nextBtn').disabled = false;
+            UI.get('hintBtn1').disabled = true;
+            UI.get('hintBtn2').disabled = true;
+        }
+
+        UI.updateStats();
+    },
+
+    renderAuction(task, container) {
+        container.classList.add('active');
+        GameState.currentTaskData = { selected: [], spent: 0 };
+
+        const budget = task.budget;
+
+        container.innerHTML = `
+            <div class="auction-container">
+                <div class="auction-header">
+                    <div class="auction-scenario">${escapeHtml(task.scenario || '')}</div>
+                    <div class="auction-budget">
+                        <span class="budget-label">Бюджет:</span>
+                        <span class="budget-available" id="budgetAvailable">${budget.toLocaleString('ru-RU')}</span>
+                        <span class="budget-currency">₽</span>
+                    </div>
+                </div>
+                <div class="auction-spent">
+                    <span>Потрачено:</span>
+                    <strong id="spentValue">0 ₽</strong>
+                    <span class="budget-remain" id="remainValue">Осталось: ${budget.toLocaleString('ru-RU')} ₽</span>
+                </div>
+                <div class="auction-cards-grid" id="auctionCards"></div>
+                <div class="auction-actions">
+                    <button class="soft-btn primary" id="auctionCheckBtn" disabled>✓ Проверить выбор</button>
+                    <button class="soft-btn" id="auctionClearBtn">✕ Сбросить</button>
+                </div>
+                <div class="auction-selection-info" id="selectionInfo">
+                    Выберите меры защиты, которые укладываются в бюджет
+                </div>
+                <div class="auction-result hidden" id="auctionResult"></div>
+            </div>
+        `;
+
+        const cardsContainer = container.querySelector('#auctionCards');
+        const checkBtn = container.querySelector('#auctionCheckBtn');
+        const clearBtn = container.querySelector('#auctionClearBtn');
+
+        // Shuffle measures for variety
+        const shuffledMeasures = shuffleArray([...task.measures]);
+
+        // Store mapping from display index to original measure
+        const measureMap = [];
+
+        shuffledMeasures.forEach((measure, idx) => {
+            measureMap.push(measure);
+            const card = document.createElement('div');
+            card.className = 'auction-card';
+            card.dataset.correct = measure.correct ? 'true' : 'false';
+            card.dataset.index = idx;
+            card.dataset.cost = measure.cost;
+            card.innerHTML = `
+                <div class="auction-card-icon">${measure.icon || '🛡️'}</div>
+                <div class="auction-card-content">
+                    <div class="auction-card-name">${escapeHtml(measure.name)}</div>
+                    <div class="auction-card-desc">${escapeHtml(measure.description || '')}</div>
+                </div>
+                <div class="auction-card-cost">${measure.cost.toLocaleString('ru-RU')} ₽</div>
+                <div class="auction-card-check">
+                    <span class="check-icon">✓</span>
+                </div>
+            `;
+            cardsContainer.appendChild(card);
+
+            card.addEventListener('click', () => {
+                if (GameState.answered) return;
+
+                const isSelected = card.classList.contains('selected');
+                const cost = measure.cost;
+
+                if (isSelected) {
+                    card.classList.remove('selected');
+                    GameState.currentTaskData.spent -= cost;
+                    GameState.currentTaskData.selected = GameState.currentTaskData.selected.filter(i => i !== idx);
+                } else {
+                    if (GameState.currentTaskData.spent + cost <= budget) {
+                        card.classList.add('selected');
+                        GameState.currentTaskData.spent += cost;
+                        GameState.currentTaskData.selected.push(idx);
+                    }
+                }
+
+                this.updateAuctionUI(measureMap, budget, container);
+            });
+        });
+
+        checkBtn.addEventListener('click', () => {
+            if (GameState.answered || GameState.currentTaskData.selected.length === 0) return;
+            this.checkAuctionAnswer(measureMap, budget, container);
+        });
+
+        clearBtn.addEventListener('click', () => {
+            if (GameState.answered) return;
+            GameState.currentTaskData.selected = [];
+            GameState.currentTaskData.spent = 0;
+            container.querySelectorAll('.auction-card').forEach(c => c.classList.remove('selected'));
+            this.updateAuctionUI(measureMap, budget, container);
+            const result = container.querySelector('#auctionResult');
+            result.classList.add('hidden');
+            result.innerHTML = '';
+        });
+
+        // Initial UI update
+        this.updateAuctionUI(measureMap, budget, container);
+    },
+
+    updateAuctionUI(measureMap, budget, container) {
+        const { selected, spent } = GameState.currentTaskData;
+        const remain = budget - spent;
+
+        const budgetEl = container.querySelector('#budgetAvailable');
+        const spentEl = container.querySelector('#spentValue');
+        const remainEl = container.querySelector('#remainValue');
+        const selectionInfo = container.querySelector('#selectionInfo');
+        const checkBtn = container.querySelector('#auctionCheckBtn');
+
+        if (budgetEl) budgetEl.textContent = remain.toLocaleString('ru-RU');
+        if (spentEl) spentEl.textContent = `${spent.toLocaleString('ru-RU')} ₽`;
+        if (remainEl) remainEl.textContent = `Осталось: ${remain.toLocaleString('ru-RU')} ₽`;
+
+        if (remain < budget * 0.2) {
+            budgetEl?.closest('.auction-budget')?.classList.add('warning');
+        } else {
+            budgetEl?.closest('.auction-budget')?.classList.remove('warning');
+        }
+
+        if (selectionInfo) {
+            if (selected.length === 0) {
+                selectionInfo.textContent = 'Выберите хотя бы одну меру защиты';
+            } else {
+                const correctSelected = selected.filter(idx => measureMap[idx]?.correct).length;
+                selectionInfo.textContent = `Выбрано мер: ${selected.length} | Из них полезных: ${correctSelected}`;
+            }
+        }
+
+        if (checkBtn) {
+            checkBtn.disabled = selected.length === 0;
+        }
+    },
+
+    checkAuctionAnswer(measureMap, budget, container) {
+        const { selected, spent } = GameState.currentTaskData;
+
+        // Calculate results
+        let correctSelected = 0;
+        let wrongSelected = 0;
+        let correctMissed = 0;
+
+        const cards = container.querySelectorAll('.auction-card');
+        cards.forEach((card, idx) => {
+            const isSelected = card.classList.contains('selected');
+            const isCorrect = card.dataset.correct === 'true';
+
+            if (isSelected && isCorrect) {
+                card.classList.add('result-correct');
+                correctSelected++;
+            } else if (isSelected && !isCorrect) {
+                card.classList.add('result-wrong');
+                wrongSelected++;
+            } else if (!isSelected && isCorrect) {
+                card.classList.add('result-missed');
+                correctMissed++;
+            }
+        });
+
+        // Score calculation
+        const totalCorrect = measureMap.filter(m => m.correct).length;
+        const finalScore = Math.max(0, (correctSelected * 10) - (wrongSelected * 5));
+
+        // Determine result level
+        let resultLevel, resultIcon, resultText;
+        if (correctSelected >= totalCorrect && wrongSelected === 0) {
+            resultLevel = 'excellent';
+            resultIcon = '🏆';
+            resultText = 'Идеально! Вы выбрали все нужные меры и не потратили лишнего!';
+        } else if (correctSelected >= totalCorrect * 0.7 && wrongSelected <= 1) {
+            resultLevel = 'good';
+            resultIcon = '👍';
+            resultText = 'Хороший результат! Почти всё верно.';
+        } else if (correctSelected >= totalCorrect * 0.5) {
+            resultLevel = 'ok';
+            resultIcon = '🤔';
+            resultText = 'Неплохо, но можно лучше. Посмотрите, что вы упустили.';
+        } else {
+            resultLevel = 'poor';
+            resultIcon = '😟';
+            resultText = 'Нужно лучше изучить меры защиты. Попробуйте ещё раз!';
+        }
+
+        const result = container.querySelector('#auctionResult');
+        result.classList.remove('hidden');
+        result.innerHTML = `
+            <div class="auction-result-content ${resultLevel}">
+                <div class="result-icon">${resultIcon}</div>
+                <div class="result-title">${resultText}</div>
+                <div class="result-stats">
+                    <div class="stat">
+                        <span class="stat-label">Верных мер</span>
+                        <span class="stat-value good">${correctSelected}/${totalCorrect}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Лишних мер</span>
+                        <span class="stat-value bad">${wrongSelected}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Упущено</span>
+                        <span class="stat-value warn">${correctMissed}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Потрачено</span>
+                        <span class="stat-value">${spent.toLocaleString('ru-RU')}/${budget.toLocaleString('ru-RU')} ₽</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Очки</span>
+                        <span class="stat-value primary">+${finalScore}</span>
+                    </div>
+                </div>
+                <div class="result-hints">
+                    <strong>Правильные меры защиты:</strong>
+                    <ul>
+                        ${measureMap.filter(m => m.correct).map(m => `<li>${m.icon || '🛡️'} ${m.name} (${m.cost.toLocaleString('ru-RU')} ₽)</li>`).join('')}
+                    </ul>
+                </div>
+            </div>
+        `;
+
+        // Update game state
+        const isCorrect = correctSelected >= totalCorrect * 0.7 && wrongSelected === 0;
+        GameState.answered = true;
+
+        if (isCorrect) {
+            GameState.correctCount++;
+            const points = GameState.calculatePoints(GameState.currentHints || 0);
+            GameState.score += points;
+            if ((GameState.currentHints || 0) === 0) GameState.perfectStreak++;
+            UI.logConsole(`✅ Аукцион пройден! +${points} очков`);
+        } else {
+            UI.logConsole(`❌ Аукцион: ${correctSelected}/${totalCorrect} верных мер`);
+        }
+
+        container.querySelector('#auctionCheckBtn').disabled = true;
+        container.querySelector('#auctionClearBtn').disabled = true;
+        UI.get('nextBtn').disabled = false;
+        UI.get('hintBtn1').disabled = true;
+        UI.get('hintBtn2').disabled = true;
+        UI.updateStats();
+    },
+
+    renderMatching(task, container) {
+        container.classList.add('active');
+
+        let scenariosHtml = '<div class="matching-scenarios">';
+        task.scenarios.forEach((scenario, idx) => {
+            scenariosHtml += `
+                <div class="matching-scenario" data-scenario="${idx}">
+                    <span class="matching-scenario-letter">${String.fromCharCode(65 + idx)}</span>
+                    <span class="matching-scenario-text">${escapeHtml(scenario.text)}</span>
+                </div>
+            `;
+        });
+        scenariosHtml += '</div>';
+
+        let answersHtml = '<div class="matching-answers">';
+        task.answers.forEach((answer, idx) => {
+            answersHtml += `
+                <button class="matching-answer-btn" data-answer="${idx}">
+                    <span class="matching-answer-number">${idx + 1}</span>
+                    <span>${escapeHtml(answer.text)}</span>
+                </button>
+            `;
+        });
+        answersHtml += '</div>';
+
+        container.innerHTML = `
+            <div class="matching-container">
+                <p class="task-question">Установите соответствие между ситуациями и угрозами:</p>
+                ${scenariosHtml}
+                ${answersHtml}
+            </div>
+        `;
+
+        container.querySelectorAll('.matching-scenario').forEach(scenarioEl => {
+            scenarioEl.addEventListener('click', () => {
+                if (GameState.answered) return;
+
+                container.querySelectorAll('.matching-scenario').forEach(s => s.classList.remove('selected'));
+                scenarioEl.classList.add('selected');
+
+                const scenarioIdx = parseInt(scenarioEl.dataset.scenario);
+                GameState.currentTaskData.selectedScenario = scenarioIdx;
+            });
+        });
+
+        container.querySelectorAll('.matching-answer-btn').forEach(answerEl => {
+            answerEl.addEventListener('click', () => {
+                if (GameState.answered) return;
+
+                const scenarioIdx = GameState.currentTaskData.selectedScenario;
+                if (scenarioIdx === undefined) return;
+
+                const answerIdx = parseInt(answerEl.dataset.answer);
+
+                const scenarioEl = container.querySelector(`[data-scenario="${scenarioIdx}"]`);
+
+                const correctAnswer = task.scenarios[scenarioIdx].correctAnswer;
+                const isCorrect = answerIdx === correctAnswer;
+
+                scenarioEl.classList.add(isCorrect ? 'correct' : 'incorrect');
+                answerEl.classList.add(isCorrect ? 'correct' : 'incorrect');
+
+                GameState.currentTaskData[`scenario_${scenarioIdx}`] = answerIdx;
+
+                const allAnswered = task.scenarios.every((_, idx) =>
+                    GameState.currentTaskData[`scenario_${idx}`] !== undefined
+                );
+
+                if (allAnswered) {
+                    this.checkMatchingAnswer(task);
+                }
+            });
+        });
+    },
+
+    updateMatchingState(task) {
+        // Reset answers when new scenario selected
+    },
+
+    checkMatchingAnswer(task) {
+        let correctCount = 0;
+
+        task.scenarios.forEach((scenario, idx) => {
+            const scenarioEl = document.querySelector(`[data-scenario="${idx}"]`);
+            const userAnswer = GameState.currentTaskData[`scenario_${idx}`];
+
+            if (userAnswer === scenario.correctAnswer) {
+                correctCount++;
+            }
+        });
+
+        const isCorrect = correctCount === task.scenarios.length;
+        this.showFeedback(task, isCorrect);
+        GameState.answered = true;
+
+        if (isCorrect) {
+            GameState.correctCount++;
+            const points = GameState.calculatePoints(GameState.currentHints || 0);
+            GameState.score += points;
+            if ((GameState.currentHints || 0) === 0) GameState.perfectStreak++;
+            UI.logConsole(`✅ Верно! +${points} очков`);
+        } else {
+            const correctAnswers = task.scenarios.map((s, i) =>
+                `${String.fromCharCode(65 + i)} → ${s.correctAnswer + 1}`
+            ).join(', ');
+            UI.logConsole(`❌ Неверно. Правильные: ${correctAnswers}`);
+        }
+
+        UI.get('nextBtn').disabled = false;
+        UI.get('hintBtn1').disabled = true;
+        UI.get('hintBtn2').disabled = true;
         UI.updateStats();
     },
 
@@ -1228,198 +1908,522 @@ const fileTabsData = [
 
 const allTasks = [
     {
-        title: 'Уязвимость SQL-инъекции',
-        question: 'В какой строке находится уязвимость SQL-инъекции?',
-        mode: 'line',
-        vulnType: 'SQL Injection',
-        lines: [
-            'def get_user(user_id):',
-            '    # Получение пользователя из БД',
-            '    query = "SELECT * FROM users WHERE id = " + user_id',
-            '    result = db.execute(query)',
-            '    return result'
-        ],
-        answerLine: 3,
-        hint1: 'Обратите внимание на формирование SQL-запроса',
-        hint2: 'Конкатенация строк в SQL-запросе позволяет внедрить вредоносный код',
-        explanation: 'Строка 3: прямая конкатенация user_id в SQL-запрос позволяет выполнить SQL-инъекцию. Используйте параметризованные запросы.'
-    },
-    {
         title: 'Слабый пароль',
-        question: 'Какая уязвимость присутствует в коде аутентификации?',
+        question: 'Что не так с паролем в этом коде?',
         mode: 'mcq',
-        vulnType: 'Weak Password',
+        vulnType: 'Слабый пароль',
         lines: [
-            'def authenticate(username, password):',
-            '    if password == "123456":',
-            '        return login_user(username)',
-            '    return False'
+            'password = "123456"',
+            'username = "admin"'
         ],
         options: [
-            'Уязвимость XSS',
-            'Слабый хардкод-пароль',
-            'Отсутствует валидация ввода',
-            'Уязвимость CSRF'
+            'Пароль слишком длинный',
+            'Пароль очень простой и его легко угадать',
+            'Пароль написан на английском',
+            'Всё в порядке, пароль хороший'
         ],
         answer: 1,
-        hint1: 'Посмотрите на значение пароля в коде',
-        hint2: 'Пароль слишком простой и зашит в коде',
-        explanation: 'В коде используется слабый хардкод-пароль "123456", который легко подобрать.'
+        hint1: 'Посмотрите на цифры в пароле - это самая простая комбина',
+        hint2: 'Такой пароль стоит на первом месте в списке самых популярных',
+        explanation: 'Пароль "123456" - самый слабый. Его можно угадать за 1 секунду. Используйте сложные пароли с буквами, цифрами и символами!'
     },
     {
-        title: 'Отсутствует проверка ввода',
-        question: 'В какой строке отсутствует проверка пользовательского ввода?',
+        title: 'Подозрительная ссылка',
+        question: 'В какой строке опасность?',
         mode: 'line',
-        vulnType: 'Input Validation',
+        vulnType: 'Фишинговая ссылка',
         lines: [
-            'def process_email(email):',
-            '    # Отправка письма',
-            '    send_email(email, "Welcome!")',
-            '    return True'
+            'Пришло письмо от "банка"',
+            'В письме ссылка: http://sberbank-security.tk/login',
+            'Нужно ввести данные карты',
+            'Это официальный сайт банка'
         ],
-        answerLine: 3,
-        hint1: 'Где используется пользовательский ввод без проверки?',
-        hint2: 'Email должен валидироваться перед использованием',
-        explanation: 'Строка 3: email используется без предварительной валидации формата.'
+        answerLine: 2,
+        hint1: 'Внимательно посмотрите на адрес сайта в ссылке',
+        hint2: 'Настоящий Сбербанк использует домен sberbank.ru, а не .tk',
+        explanation: 'Домен .tk - бесплатный и часто используется мошенниками. Настоящий сайт банка имеет официальный домен .ru или .com.'
     },
     {
-        title: 'Хардкод секретных ключей',
-        question: 'Какая проблема безопасности есть в этом коде?',
+        title: 'Публичный Wi-Fi',
+        question: 'В чём опасность этой ситуации?',
         mode: 'mcq',
-        vulnType: 'Hardcoded Secrets',
+        vulnType: 'Публичный Wi-Fi',
         lines: [
-            '# Конфигурация API',
-            'API_KEY = "sk-abc123xyz789"',
-            'SECRET_TOKEN = "super_secret_token_12345"',
-            'DEBUG_MODE = True'
+            'Подключился к бесплатному Wi-Fi в кафе',
+            'Зашёл в онлайн-банк',
+            'Ввёл логин и пароль'
         ],
         options: [
-            'Неправильное форматирование кода',
-            'Хардкод секретных ключей в коде',
-            'Отсутствуют комментарии',
-            'Неправильный порядок импортов'
+            'Ничего опасного, все так делают',
+            'В публичной сети хакеры могут перехватить данные',
+            'Wi-Fi в кафе слишком медленный',
+            'Нельзя заходить в банк с телефона'
         ],
         answer: 1,
-        hint1: 'Обратите внимание на строки с константами',
-        hint2: 'Секретные значения не должны храниться в коде',
-        explanation: 'Секретные ключи API и токены не должны храниться в исходном коде. Используйте переменные окружения.'
+        hint1: 'Публичные сети не шифруют данные',
+        hint2: 'Любой человек в этой же сети может видеть ваш трафик',
+        explanation: 'В публичных Wi-Fi сетях злоумышленники могут перехватывать данные. Не вводите пароли и данные карт без VPN!'
     },
     {
-        title: 'XSS уязвимость',
-        question: 'В какой строке возможна XSS-атака?',
+        title: 'Сообщение о выигрыше',
+        question: 'Гдесь здесь обман?',
         mode: 'line',
-        vulnType: 'XSS',
+        vulnType: 'Мошенничество',
         lines: [
-            'def render_comment(comment):',
-            '    # Отображение комментария',
-            '    return f"<div class=\'comment\'>{comment}</div>"',
-            '    # Конец функции'
+            'SMS: "Поздравляем! Вы выиграли iPhone 15!"',
+            'Для получения приза перейдите по ссылке',
+            'И отправьте код из SMS в ответ',
+            'Срок получения - 24 часа'
         ],
-        answerLine: 3,
-        hint1: 'Где пользовательский контент выводится без экранирования?',
-        hint2: 'HTML-контекст требует экранирования специального ввода',
-        explanation: 'Строка 3: комментарий выводится без HTML-экранирования, что позволяет внедрить вредоносный скрипт.'
+        answerLine: 1,
+        hint1: 'Вы участвовали в розыгрыше iPhone?',
+        hint2: 'Настоящие призы не требуют перехода по подозрительным ссылкам',
+        explanation: 'Это классическое мошенничество! Если вы не участвовали в розыгрыше - это обман. Не переходите по ссылкам и не отправляйте коды!'
     },
     {
-        title: 'Небезопасная десериализация',
-        question: 'Какая уязвимость присутствует в коде?',
+        title: 'Пароль от друга',
+        question: 'Правильно ли поступил Петя?',
         mode: 'mcq',
-        vulnType: 'Insecure Deserialization',
+        vulnType: 'Безопасность аккаунта',
         lines: [
-            'import pickle',
-            'def load_user_data(data):',
-            '    return pickle.loads(data)'
+            'Друг попросил пароль от соцсети',
+            'Сказал: "Мне нужно проверить что-то"',
+            'Петя дал свой пароль'
         ],
         options: [
-            'Утечка памяти',
-            'Небезопасная десериализация через pickle',
-            'Отсутствует обработка исключений',
-            'Неправильный импорт модуля'
+            'Да, друзьям можно доверять пароли',
+            'Нет, пароль нельзя давать никому',
+            'Да, если друг обещает не говорить другим',
+            'Нет, но только если друг не злоумышленник'
         ],
         answer: 1,
-        hint1: 'Модуль pickle небезопасен для ненадёжных данных',
-        hint2: 'pickle.loads может выполнить произвольный код',
-        explanation: 'pickle.loads() может выполнить произвольный код при десериализации ненадёжных данных. Используйте JSON или другие безопасные форматы.'
+        hint1: 'Пароль - это личная информация',
+        hint2: 'Даже друзья могут случайно раскрыть пароль',
+        explanation: 'Пароли нельзя давать НИКОМУ! Даже друзьям. Если друг хочет что-то проверить - пусть сделает это при вас.'
     },
     {
-        title: 'Отсутствует HTTPS',
-        question: 'В какой строке проблема безопасности?',
+        title: 'Странное приложение',
+        question: 'Что делать в этой ситуации?',
+        mode: 'mcq',
+        vulnType: 'Безопасность приложений',
+        lines: [
+            'Нашёл в интернете "бесплатный Premium Spotify"',
+            'Нужно скачать APK файл',
+            'И установить его на телефон',
+            'Обычный Spotify стоит 199 руб/мес'
+        ],
+        options: [
+            'Скачать, ведь это бесплатно',
+            'Не скачивать - это может быть вирус',
+            'Скачать, но установить антивирус',
+            'Отправить другу, пусть проверит'
+        ],
+        answer: 1,
+        hint1: 'Бесплатный сыр только в мышеловке',
+        hint2: 'APK файлы из интернета могут содержать вирусы',
+        explanation: 'Не скачивайте модифицированные приложения! Они могут содержать вирусы, ворующие данные. Используйте только официальные приложения.'
+    },
+    {
+        title: 'Данные карты в соцсети',
+        question: 'В какой строке опасность?',
         mode: 'line',
-        vulnType: 'Insecure Transport',
+        vulnType: 'Утечка данных',
         lines: [
-            'def fetch_data(endpoint):',
-            '    # Запрос к API',
-            '    url = "http://api.example.com/" + endpoint',
-            '    response = requests.get(url)',
-            '    return response.json()'
+            'Опубликовал фото новой банковской карты',
+            'Чтобы все видели, какая красивая',
+            'Номер карты виден на фото',
+            'Закрыл только срок действия'
         ],
-        answerLine: 3,
-        hint1: 'Какой протокол используется для соединения?',
-        hint2: 'HTTP не шифрует передаваемые данные',
-        explanation: 'Строка 3: используется HTTP вместо HTTPS, данные передаются в открытом виде.'
+        answerLine: 1,
+        hint1: 'Какую информацию содержит банковская карта?',
+        hint2: 'Номер карты на фото могут использовать мошенники',
+        explanation: 'Никогда не публикуйте данные карты! По номеру карты можно совершать покупки в интернете. Закрывайте все данные карты.'
     },
     {
-        title: 'Избыточные права доступа',
-        question: 'Какая проблема безопасности в этом коде?',
+        title: 'Звонок из "банка"',
+        question: 'Как правильно поступить?',
         mode: 'mcq',
-        vulnType: 'Excessive Permissions',
+        vulnType: 'Социальная инженерия',
         lines: [
-            'def create_app_user():',
-            '    user = User()',
-            '    user.role = "admin"',
-            '    user.permissions = ["read", "write", "delete", "admin"]',
-            '    return user'
+            'Звонят: "Сотрудник банка"',
+            '"Ваша карта заблокирована, назовите CVV"',
+            'CVV - это 3 цифры на обороте карты'
         ],
         options: [
-            'Неправильное создание объекта',
-            'Пользователю назначены избыточные права',
-            'Отсутствует проверка на дубликаты',
-            'Неправильное имя класса'
+            'Назвать CVV, ведь звонят из банка',
+            'Положить трубку и позвонить в банк самому',
+            'Назвать только первые 2 цифры',
+            'Попросить прислать SMS для подтверждения'
         ],
         answer: 1,
-        hint1: 'Какие права получает обычный пользователь?',
-        hint2: 'Принцип минимальных привилегий нарушен',
-        explanation: 'Обычному пользователю назначаются права администратора. Следует применять принцип минимальных привилегий.'
+        hint1: 'Настоящий сотрудник банка НИКОГДА не спрашивает CVV',
+        hint2: 'Лучше самому перезвонить в банк по официальному номеру',
+        explanation: 'Банк НИКОГДА не спрашивает CVV код! Это мошенники. Положите трубку и позвоните в банк сами по номеру на карте.'
     },
     {
-        title: 'Уязвимость path traversal',
-        question: 'В какой строке уязвимость path traversal?',
+        title: 'Пароли везде одинаковые',
+        question: 'В чём ошибка этого пользователя?',
+        mode: 'mcq',
+        vulnType: 'Безопасность паролей',
+        lines: [
+            'Использует один пароль для всех сайтов',
+            '"Так проще запомнить"',
+            'Пароль: "МойКот2024"'
+        ],
+        options: [
+            'Ничего страшного, пароль сложный',
+            'Если один сайт взломают, получат доступ ко всем',
+            'Кот - это ненадёжный пароль',
+            '2024 - это старый год'
+        ],
+        answer: 1,
+        hint1: 'Что будет, если один из сайтов утечёт?',
+        hint2: 'Одинаковые пароли = все аккаунты под угрозой',
+        explanation: 'Используйте разные пароли для разных сайтов! Если один сайт взломают, злоумышленники получат доступ ко всем вашим аккаунтам.'
+    },
+    {
+        title: 'Скачивание реферата',
+        question: 'В какой строке опасность?',
         mode: 'line',
-        vulnType: 'Path Traversal',
+        vulnType: 'Вирусы',
         lines: [
-            'def read_file(filename):',
-            '    # Чтение файла из директории',
-            '    filepath = "/var/data/" + filename',
-            '    return open(filepath).read()'
+            'Нашёл сайт с бесплатными рефератами',
+            'Для скачивания нужно отключить антивирус',
+            '"Антивирус мешает загрузке"',
+            'Файл: "реферат_по_истории.exe"'
         ],
-        answerLine: 4,
-        hint1: 'Где формируется путь к файлу?',
-        hint2: 'Пользователь может указать "../" для доступа к другим директориям',
-        explanation: 'Строка 4: пользователь может указать путь с "../" для чтения файлов за пределами разрешённой директории.'
+        answerLine: 2,
+        hint1: 'Реферат должен быть в формате .doc или .pdf',
+        hint2: 'Зачем реферату формат .exe (программа)?',
+        explanation: 'Реферат не может быть в формате .exe! Это вирус. Никогда не отключайте антивирус и не скачивайте подозрительные файлы.'
+    },
+    // ===== FLOWCHART TASKS (5 variants - simple logic for 8-9 grade) =====
+    {
+        title: 'Блок-схема: Если дождь - бери зонт',
+        question: 'Соберите правильную блок-схему',
+        mode: 'flowchart',
+        vulnType: 'Логика',
+        proverb: 'Ситуация: "Если идёт дождь - возьми зонт"',
+        always: false,
+        blocks: [
+            { text: 'Выходим на улицу', type: 'process', correctZone: 0 },
+            { text: 'Идёт дождь?', type: 'decision', correctZone: 1 },
+            { text: 'Да', type: 'branch-yes', correctZone: 2 },
+            { text: 'Нет', type: 'branch-no', correctZone: 3 },
+            { text: 'Берём зонт', type: 'process', correctZone: 4 },
+            { text: 'Идём без зонта', type: 'process', correctZone: 5 }
+        ],
+        zones: [
+            { label: 'Начало', correctText: 'Выходим на улицу' },
+            { label: 'Условие (ромб)', correctText: 'Идёт дождь?' },
+            { label: 'Ветка ДА', correctText: 'Да' },
+            { label: 'Ветка НЕТ', correctText: 'Нет' },
+            { label: 'Действие 1', correctText: 'Берём зонт' },
+            { label: 'Действие 2', correctText: 'Идём без зонта' }
+        ],
+        hint1: 'Сначала мы выходим, потом проверяем погоду',
+        hint2: 'Если дождь = берём зонт, если нет = идём без зонта',
+        explanation: 'Блок-схема: Начало → Проверка (дождь?) → Если да → берём зонт, если нет → идём без зонта.'
     },
     {
-        title: 'Отсутствует rate limiting',
-        question: 'Какая проблема безопасности в этом коде?',
-        mode: 'mcq',
-        vulnType: 'Missing Rate Limiting',
-        lines: [
-            'def login(request):',
-            '    username = request.POST["username"]',
-            '    password = request.POST["password"]',
-            '    if check_credentials(username, password):',
-            '        return redirect("/dashboard")',
-            '    return render("login.html")'
+        title: 'Блок-схема: Домашнее задание',
+        question: 'Расставьте блоки по порядку',
+        mode: 'flowchart',
+        vulnType: 'Логика',
+        proverb: 'Ситуация: "Сделал уроки - гуляй, нет - сиди дома"',
+        always: false,
+        blocks: [
+            { text: 'Пришёл из школы', type: 'process', correctZone: 0 },
+            { text: 'Сделал уроки?', type: 'decision', correctZone: 1 },
+            { text: 'Да, сделал', type: 'branch-yes', correctZone: 2 },
+            { text: 'Нет, не сделал', type: 'branch-no', correctZone: 3 },
+            { text: 'Иди гулять', type: 'process', correctZone: 4 },
+            { text: 'Сиди дома, делай уроки', type: 'process', correctZone: 5 }
         ],
-        options: [
-            'Неправильная обработка POST-данных',
-            'Отсутствует ограничение количества попыток входа',
-            'Неправильный редирект',
-            'Отсутствует валидация username'
+        zones: [
+            { label: 'Начало', correctText: 'Пришёл из школы' },
+            { label: 'Условие (ромб)', correctText: 'Сделал уроки?' },
+            { label: 'Ветка ДА', correctText: 'Да, сделал' },
+            { label: 'Ветка НЕТ', correctText: 'Нет, не сделал' },
+            { label: 'Результат 1', correctText: 'Иди гулять' },
+            { label: 'Результат 2', correctText: 'Сиди дома, делай уроки' }
         ],
-        answer: 1,
-        hint1: 'Что может произойти при множественных попытках входа?',
-        hint2: 'Brute force атака возможна без ограничений',
-        explanation: 'Отсутствует rate limiting для попыток входа, что позволяет проводить brute force атаки.'
+        hint1: 'Сначала пришёл из школы, потом проверил уроки',
+        hint2: 'Сделал = гуляй, не сделал = сиди дома',
+        explanation: 'Логика: Пришёл → Проверил уроки → Если сделал = гуляй, если нет = сиди дома.'
+    },
+    {
+        title: 'Блок-схема: Автобус',
+        question: 'Постройте правильную схему',
+        mode: 'flowchart',
+        vulnType: 'Логика',
+        proverb: 'Ситуация: "Пришёл на остановку, ждёшь автобус"',
+        always: false,
+        blocks: [
+            { text: 'Пришёл на остановку', type: 'process', correctZone: 0 },
+            { text: 'Автобус приехал?', type: 'decision', correctZone: 1 },
+            { text: 'Да', type: 'branch-yes', correctZone: 2 },
+            { text: 'Нет', type: 'branch-no', correctZone: 3 },
+            { text: 'Садись в автобус', type: 'process', correctZone: 4 },
+            { text: 'Жди дальше', type: 'process', correctZone: 5 }
+        ],
+        zones: [
+            { label: 'Начало', correctText: 'Пришёл на остановку' },
+            { label: 'Условие (ромб)', correctText: 'Автобус приехал?' },
+            { label: 'Ветка ДА', correctText: 'Да' },
+            { label: 'Ветка НЕТ', correctText: 'Нет' },
+            { label: 'Действие 1', correctText: 'Садись в автобус' },
+            { label: 'Действие 2', correctText: 'Жди дальше' }
+        ],
+        hint1: 'Пришёл → Проверил → Ждёшь или садишься',
+        hint2: 'Если приехал = садись, нет = жди',
+        explanation: 'Блок-схема: Пришёл → Проверил автобус → Если приехал = садись, если нет = жди дальше.'
+    },
+    {
+        title: 'Блок-схема: Холодильник',
+        question: 'Расставьте блоки правильно',
+        mode: 'flowchart',
+        vulnType: 'Логика',
+        proverb: 'Ситуация: "Открыл холодильник - есть еда? - есть, поел"',
+        always: false,
+        blocks: [
+            { text: 'Захотел есть', type: 'process', correctZone: 0 },
+            { text: 'Есть еда в холодильнике?', type: 'decision', correctZone: 1 },
+            { text: 'Да, есть', type: 'branch-yes', correctZone: 2 },
+            { text: 'Нет, пусто', type: 'branch-no', correctZone: 3 },
+            { text: 'Поешь', type: 'process', correctZone: 4 },
+            { text: 'Иди в магазин', type: 'process', correctZone: 5 }
+        ],
+        zones: [
+            { label: 'Начало', correctText: 'Захотел есть' },
+            { label: 'Условие (ромб)', correctText: 'Есть еда в холодильнике?' },
+            { label: 'Ветка ДА', correctText: 'Да, есть' },
+            { label: 'Ветка НЕТ', correctText: 'Нет, пусто' },
+            { label: 'Результат 1', correctText: 'Поешь' },
+            { label: 'Результат 2', correctText: 'Иди в магазин' }
+        ],
+        hint1: 'Захотел есть → Проверил холодильник',
+        hint2: 'Еда есть = поешь, нет = иди в магазин',
+        explanation: 'Логика: Захотел есть → Проверил → Если есть = поешь, если нет = иди в магазин.'
+    },
+    {
+        title: 'Блок-схема: Будильник',
+        question: 'Соберите правильную блок-схему',
+        mode: 'flowchart',
+        vulnType: 'Логика',
+        proverb: 'Ситуация: "Прозвенел будильник - вставай или спи дальше"',
+        always: false,
+        blocks: [
+            { text: 'Прозвенел будильник', type: 'process', correctZone: 0 },
+            { text: 'Пора вставать?', type: 'decision', correctZone: 1 },
+            { text: 'Да, пора', type: 'branch-yes', correctZone: 2 },
+            { text: 'Нет, ещё 5 минут', type: 'branch-no', correctZone: 3 },
+            { text: 'Вставай', type: 'process', correctZone: 4 },
+            { text: 'Выключи будильник и спи', type: 'process', correctZone: 5 }
+        ],
+        zones: [
+            { label: 'Начало', correctText: 'Прозвенел будильник' },
+            { label: 'Условие (ромб)', correctText: 'Пора вставать?' },
+            { label: 'Ветка ДА', correctText: 'Да, пора' },
+            { label: 'Ветка НЕТ', correctText: 'Нет, ещё 5 минут' },
+            { label: 'Действие 1', correctText: 'Вставай' },
+            { label: 'Действие 2', correctText: 'Выключи будильник и спи' }
+        ],
+        hint1: 'Будильник прозвенел → решил: вставать или нет',
+        hint2: 'Пора = вставай, нет = спи дальше',
+        explanation: 'Блок-схема: Будильник → Проверил → Если пора = вставай, если нет = спи дальше.'
+    },
+    // ===== AUCTION TABLE TASKS (5 variants with different scenarios, budget 1M ₽) =====
+    {
+        title: 'Аукцион: Защита компьютера',
+        question: 'Выберите меры защиты для домашнего компьютера в рамках бюджета',
+        mode: 'auction',
+        vulnType: 'Управление рисками',
+        scenario: '🏠 Вы купили новый компьютер для учёбы и развлечений. Какие меры защиты установите? Бюджет — 1 000 000 ₽.',
+        budget: 1000000,
+        always: false,
+        measures: [
+            { name: 'Антивирус (Kaspersky)', cost: 150000, correct: true, icon: '🛡️', description: 'Надёжная защита от вирусов и шпионов' },
+            { name: 'Резервное копирование (облако)', cost: 120000, correct: true, icon: '☁️', description: 'Автосохранение файлов в облако' },
+            { name: 'Фаервол (брандмауэр)', cost: 80000, correct: true, icon: '🔥', description: 'Блокировка подозрительных подключений' },
+            { name: 'Обучение кибербезопасности', cost: 50000, correct: true, icon: '📚', description: 'Курс по распознаванию фишинга' },
+            { name: 'Менеджер паролей', cost: 60000, correct: true, icon: '🔑', description: 'Хранение всех паролей в сейфе' },
+            { name: 'Золотая рамка монитора', cost: 200000, correct: false, icon: '🖼️', description: 'Красиво, но от вирусов не спасёт' },
+            { name: 'RGB подсветка корпуса', cost: 90000, correct: false, icon: '🌈', description: 'Светится красиво, но не защищает' },
+            { name: 'Игровая мышка', cost: 70000, correct: false, icon: '🖱️', description: 'Для игр, а не для защиты' },
+            { name: 'Стикер "Я хакер"', cost: 30000, correct: false, icon: '😎', description: 'Модный стикер, но бесполезный' },
+            { name: 'Вентилятор с LED', cost: 110000, correct: false, icon: '🌀', description: 'Охлаждение, но не защита' },
+            { name: 'Подставка под ноутбук', cost: 40000, correct: false, icon: '📐', description: 'Удобно, но не связано с ИБ' },
+            { name: 'Беспроводная зарядка', cost: 85000, correct: false, icon: '⚡', description: 'Удобно, но не защищает' }
+        ],
+        hint1: 'Главные риски: вирусы, потеря файлов, взлом аккаунтов, фишинг',
+        hint2: 'Антивирус + бэкап + фаервол + обучение + менеджер паролей = надёжная защита',
+        explanation: 'Правильные меры: Антивирус (150К) + Бэкап (120К) + Фаервол (80К) + Обучение (50К) + Менеджер паролей (60К) = 460 000₽. Остальное — лишние траты!'
+    },
+    {
+        title: 'Аукцион: Защита телефона',
+        question: 'Выберите меры защиты для смартфона в рамках бюджета',
+        mode: 'auction',
+        vulnType: 'Мобильная безопасность',
+        scenario: '📱 У вас новый флагманский смартфон. Как его защитите от цифровых угроз? Бюджет — 1 000 000 ₽.',
+        budget: 1000000,
+        always: false,
+        measures: [
+            { name: 'Мобильный антивирус', cost: 100000, correct: true, icon: '🛡️', description: 'Сканирование приложений и файлов' },
+            { name: 'Блокировка экрана (отпечаток/Face ID)', cost: 30000, correct: true, icon: '🔒', description: 'Настройка PIN или биометрии' },
+            { name: 'Двухфакторная аутентификация (2FA)', cost: 20000, correct: true, icon: '🔑', description: 'Приложение-аутентификатор' },
+            { name: 'VPN для публичных Wi-Fi', cost: 120000, correct: true, icon: '🌐', description: 'Шифрование трафика в общественных сетях' },
+            { name: 'Настройки приватности приложений', cost: 25000, correct: true, icon: '👁️', description: 'Ограничение доступа к данным' },
+            { name: 'Чехол с бриллиантами', cost: 500000, correct: false, icon: '💎', description: 'Дорого и красиво, но от вирусов не спасёт' },
+            { name: 'Защитное стекло Premium', cost: 80000, correct: false, icon: '🪟', description: 'От царапин да, но не от киберугроз' },
+            { name: 'Платная тема оформления', cost: 60000, correct: false, icon: '🎭', description: 'Красивые иконки, но не защита' },
+            { name: 'Портативная зарядка', cost: 90000, correct: false, icon: '🔋', description: 'Полезно, но не связано с безопасностью' },
+            { name: 'Bluetooth трекер для ключей', cost: 70000, correct: false, icon: '📍', description: 'Для ключей, а не для телефона' },
+            { name: 'Селфи-палка', cost: 40000, correct: false, icon: '🤳', description: 'Для фото, но не для защиты' },
+            { name: 'Страховка телефона', cost: 300000, correct: false, icon: '📋', description: 'От кражи поможет, но не от хакеров' }
+        ],
+        hint1: 'Главные риски: вирусы в приложениях, кража данных в публичных Wi-Fi, доступ чужих людей к телефону',
+        hint2: 'Антивирус + блокировка + 2FA + VPN + приватность = полная защита смартфона',
+        explanation: 'Правильные меры: Антивирус (100К) + Блокировка (30К) + 2FA (20К) + VPN (120К) + Приватность (25К) = 295 000₽. Остальное не защищает от цифровых угроз!'
+    },
+    {
+        title: 'Аукцион: Защита соцсетей',
+        question: 'Выберите меры защиты для аккаунтов в соцсетях',
+        mode: 'auction',
+        vulnType: 'Безопасность аккаунтов',
+        scenario: '🌐 У вас ВКонтакте, Telegram и Instagram. Как защитите аккаунты от взлома? Бюджет — 1 000 000 ₽.',
+        budget: 1000000,
+        always: false,
+        measures: [
+            { name: 'Генератор уникальных паролей', cost: 40000, correct: true, icon: '🔐', description: 'Создание сложных паролей для каждого сайта' },
+            { name: 'Двухфакторная аутентификация', cost: 30000, correct: true, icon: '📲', description: 'Код из SMS при каждом входе' },
+            { name: 'Настройка приватности', cost: 25000, correct: true, icon: '⚙️', description: 'Кто видит ваши фото и переписки' },
+            { name: 'Сервис проверки сессий', cost: 35000, correct: true, icon: '📱', description: 'Контроль устройств, которые вошли в аккаунт' },
+            { name: 'Антиспам-фильтр', cost: 80000, correct: true, icon: '🚫', description: 'Блокировка спама и фишинговых ссылок' },
+            { name: 'Накрутка подписчиков', cost: 200000, correct: false, icon: '📈', description: 'Фейки, которые не защитят аккаунт' },
+            { name: 'Платная верификация', cost: 300000, correct: false, icon: '✅', description: 'Галочка не спасает от взлома' },
+            { name: 'Бот для автоответов', cost: 150000, correct: false, icon: '🤖', description: 'Может украсть ваш аккаунт' },
+            { name: 'VPN для лайков', cost: 120000, correct: false, icon: '🌍', description: 'Бессмысленно для лайков' },
+            { name: 'Дизайн профиля', cost: 100000, correct: false, icon: '🎨', description: 'Красиво, но не защищает' },
+            { name: 'Таргетированная реклама', cost: 250000, correct: false, icon: '📢', description: 'Для продвижения, а не защиты' },
+            { name: 'Покупка лайков', cost: 50000, correct: false, icon: '❤️', description: 'Бесполезно и опасно' }
+        ],
+        hint1: 'Главные риски: взлом аккаунта, утечка личных данных, мошенники от вашего имени',
+        hint2: 'Пароли + 2FA + приватность + проверка сессий + антиспам = максимальная защита',
+        explanation: 'Правильные меры: Пароли (40К) + 2FA (30К) + Приватность (25К) + Сессии (35К) + Антиспам (80К) = 210 000₽.'
+    },
+    {
+        title: 'Аукцион: Защита онлайн-банка',
+        question: 'Выберите меры защиты для интернет-банка',
+        mode: 'auction',
+        vulnType: 'Финансовая безопасность',
+        scenario: '🏦 Вы пользуетесь онлайн-банком. Как защитите свои финан от кибермошенников? Бюджет — 1 000 000 ₽.',
+        budget: 1000000,
+        always: false,
+        measures: [
+            { name: 'Двухфакторная аутентификация', cost: 40000, correct: true, icon: '🔑', description: 'SMS-код при каждом входе в банк' },
+            { name: 'Виртуальная карта для онлайн-покупок', cost: 30000, correct: true, icon: '💳', description: 'Лимитированная карта для интернета' },
+            { name: 'Антивирус с защитой платежей', cost: 180000, correct: true, icon: '🛡️', description: 'Специальная защита банковских операций' },
+            { name: 'SMS-уведомления об операциях', cost: 20000, correct: true, icon: '🔔', description: 'Мгновенные SMS о списаниях' },
+            { name: 'Настройка лимитов на переводы', cost: 15000, correct: true, icon: '📊', description: 'Ограничение суммы перевода в день' },
+            { name: 'Золотая банковская карта', cost: 400000, correct: false, icon: '🏅', description: 'Статусная, но не защищает от мошенников' },
+            { name: 'Финансовый консультант', cost: 300000, correct: false, icon: '👔', description: 'Советует куда вложить, но не защищает' },
+            { name: 'Кешбэк-бонусы', cost: 0, correct: false, icon: '💰', description: 'Приятно, но это не защита' },
+            { name: 'Премиум обслуживание', cost: 250000, correct: false, icon: '⭐', description: 'Комфорт, но не безопасность' },
+            { name: 'Страховка вклада', cost: 200000, correct: false, icon: '📋', description: 'От банкротства банка, не от хакеров' },
+            { name: 'Бонусная программа', cost: 50000, correct: false, icon: '🎁', description: 'Баллы, а не защита' },
+            { name: 'Дизайнерская карта', cost: 100000, correct: false, icon: '🎨', description: 'Красивая, но функции те же' }
+        ],
+        hint1: 'Главные риски: кража данных карты, взлом онлайн-банка, мошеннические переводы',
+        hint2: '2FA + виртуальная карта + антивирус + уведомления + лимиты = защита финансов',
+        explanation: 'Правильные меры: 2FA (40К) + Вирт. карта (30К) + Антивирус (180К) + Уведомления (20К) + Лимиты (15К) = 285 000₽.'
+    },
+    {
+        title: 'Аукцион: Защита Wi-Fi сети',
+        question: 'Выберите меры защиты для домашней Wi-Fi сети',
+        mode: 'auction',
+        vulnType: 'Сетевая безопасность',
+        scenario: '📡 Вы настроили домашнюю Wi-Fi сеть. Как его защитите от злоумышленников? Бюджет — 1 000 000 ₽.',
+        budget: 1000000,
+        always: false,
+        measures: [
+            { name: 'Роутер с поддержкой WPA3', cost: 150000, correct: true, icon: '🔐', description: 'Самый надёжный стандарт шифрования Wi-Fi' },
+            { name: 'Настройка сложного пароя', cost: 20000, correct: true, icon: '🔑', description: 'Минимум 12 символов с буквами и цифрами' },
+            { name: 'Скрытие имени сети (SSID)', cost: 15000, correct: true, icon: '👻', description: 'Сеть не видна в списке доступных' },
+            { name: 'Настройка гостевой сети', cost: 30000, correct: true, icon: '👥', description: 'Отдельная сеть без доступа к вашим устройствам' },
+            { name: 'Обновление прошивки роутера', cost: 25000, correct: true, icon: '🔄', description: 'Закрытие уязвимостей в ПО роутера' },
+            { name: 'Золотой корпус роутера', cost: 300000, correct: false, icon: '🏆', description: 'Выглядит дорого, но сигнал тот же' },
+            { name: 'Усилитель сигнала', cost: 150000, correct: false, icon: '📶', description: 'Дальше бьёт, но не защищает' },
+            { name: 'RGB подсветка роутера', cost: 80000, correct: false, icon: '🌈', description: 'Красиво светится, но не защищает' },
+            { name: 'Антенна-дизайн', cost: 120000, correct: false, icon: '📡', description: 'Стильная антенна, но не ИБ' },
+            { name: 'Смарт-розетка', cost: 60000, correct: false, icon: '🔌', description: 'Включать роутер по расписанию, но не защита' },
+            { name: 'Подставка под роутер', cost: 30000, correct: false, icon: '📐', description: 'Эстетика, но не безопасность' },
+            { name: 'Бесперебойник', cost: 200000, correct: false, icon: '🔋', description: 'От отключения света, не от хакеров' }
+        ],
+        hint1: 'Главные риски: подключение чужих людей к сети, перехват данных, взлом роутера',
+        hint2: 'WPA3 + сложный пароль + скрытие SSID + гостевая сеть + обновление = защита сети',
+        explanation: 'Правильные меры: WPA3 (150К) + Пароль (20К) + Скрытие SSID (15К) + Гостевая сеть (30К) + Обновление (25К) = 240 000₽.'
+    },
+    // ===== MATCHING TASKS (always appear, 3 variants) =====
+    {
+        title: 'Соответствие угроз',
+        question: 'Определите тип угрозы для каждой ситуации',
+        mode: 'matching',
+        vulnType: 'Классификация угроз',
+        always: true,
+        scenarios: [
+            { text: 'SMS: "Ваш аккаунт заблокирован, перейдите по ссылке"', correctAnswer: 1 },
+            { text: 'Звонят: "Я из банка, назовите код с карты"', correctAnswer: 0 },
+            { text: 'Файлы зашифрованы, требуют деньги за расшифровку', correctAnswer: 2 }
+        ],
+        answers: [
+            { text: 'Социальная инженерия (обман по телефону)' },
+            { text: 'Фишинг (поддельная ссылка)' },
+            { text: 'Вирус-шифровальщик (вымогательство)' }
+        ],
+        hint1: 'Фишинг - это когда вас "ловят" на поддельную ссылку',
+        hint2: 'Социальная инженерия - это обман человека по телефону',
+        explanation: 'SMS со ссылкой = Фишинг. Звонок из "банка" = Социальная инженерия. Шифрование файлов = Вирус-шифровальщик.'
+    },
+    {
+        title: 'Соответствие угроз #2',
+        question: 'Определите тип угрозы',
+        mode: 'matching',
+        vulnType: 'Классификация угроз',
+        always: true,
+        scenarios: [
+            { text: 'Письмо от "директора": "Переведи деньги срочно!"', correctAnswer: 0 },
+            { text: 'Сайт выглядит как ВКонтакте, но адрес странный', correctAnswer: 1 },
+            { text: 'Экран заблокирован: "Отправьте SMS для разблокировки"', correctAnswer: 2 }
+        ],
+        answers: [
+            { text: 'Социальная инженерия (манипуляция)' },
+            { text: 'Фишинг (поддельный сайт)' },
+            { text: 'Вымогательство (требуют деньги)' }
+        ],
+        hint1: 'Письмо от "начальника" - это манипуляция',
+        hint2: 'Поддельный сайт ВКонтакте = фишинг',
+        explanation: 'Письмо от "директора" = Социальная инженерия. Поддельный сайт = Фишинг. Блокировка с требованием SMS = Вымогательство.'
+    },
+    {
+        title: 'Соответствие угроз #3',
+        question: 'Сопоставьте ситуации с типами угроз',
+        mode: 'matching',
+        vulnType: 'Классификация угроз',
+        always: true,
+        scenarios: [
+            { text: '"Вы выиграли iPhone! Для получения оплатите доставку"', correctAnswer: 1 },
+            { text: 'Друг просит ваш пароль "на минуту"', correctAnswer: 0 },
+            { text: 'Появилась реклама: "Ваш компьютер заражён! Скачайте антивирус"', correctAnswer: 2 }
+        ],
+        answers: [
+            { text: 'Социальная инженерия (обман)' },
+            { text: 'Фишинг (приманка с "выигрышем")' },
+            { text: 'Вирус (фейковый антивирус)' }
+        ],
+        hint1: '"Выигрыш", в котором не участвовал = приманка',
+        hint2: 'Просьба пароля = социальная инженерия',
+        explanation: '"Выигрыш" = Фишинг. Просьба пароля = Социальная инженерия. Фейковый антивирус = Вирус.'
     }
 ];
 
