@@ -389,7 +389,7 @@ class SessionHistory {
         }
 
         empty.classList.add('hidden');
-        list.innerHTML = sessions.map(session => {
+        list.innerHTML = sessions.map((session, sessionIndex) => {
             const date = new Date(session.date);
             const dateStr = date.toLocaleDateString('ru-RU', {
                 day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
@@ -405,7 +405,11 @@ class SessionHistory {
                 : (isCompleted ? '<span class="history-status-completed">✅ Выполнено</span>' : '');
 
             return `
-            <div class="history-item ${isAbandoned ? 'history-item-abandoned' : ''} ${isCompleted ? 'history-item-completed' : ''}">
+            <div class="history-item ${isAbandoned ? 'history-item-abandoned' : ''} ${isCompleted ? 'history-item-completed' : ''}"
+                 data-session-index="${sessionIndex}"
+                 tabindex="0"
+                 role="button"
+                 aria-label="Открыть детальный отчет за ${dateStr}">
                 <div class="history-item-header">
                     <span class="history-item-date">${dateStr}</span>
                     <span class="history-item-score">${session.score} очков</span>
@@ -418,9 +422,208 @@ class SessionHistory {
                     ${session.perfectStreak > 0 ? `<span>⭐ ${session.perfectStreak}</span>` : ''}
                     ${statusBadge}
                 </div>
+                <div class="history-item-click-hint">👆 Нажмите для детального отчета</div>
             </div>
         `;
         }).join('');
+    }
+
+    static initClickHandlers() {
+        const list = document.getElementById('historyList');
+        if (!list) return;
+
+        // Remove existing handler if any
+        list.removeEventListener('click', this._clickHandler);
+        list.removeEventListener('keydown', this._keyHandler);
+
+        // Click handler with event delegation
+        this._clickHandler = (e) => {
+            const historyItem = e.target.closest('.history-item');
+            if (!historyItem) return;
+
+            e.preventDefault();
+            e.stopPropagation();
+
+            const index = parseInt(historyItem.dataset.sessionIndex);
+            const sessions = this.getSessions();
+            if (sessions[index]) {
+                this.showDetailedReport(sessions[index]);
+            }
+        };
+
+        // Keyboard handler for accessibility
+        this._keyHandler = (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                const historyItem = e.target.closest('.history-item');
+                if (!historyItem) return;
+
+                e.preventDefault();
+                e.stopPropagation();
+
+                const index = parseInt(historyItem.dataset.sessionIndex);
+                const sessions = this.getSessions();
+                if (sessions[index]) {
+                    this.showDetailedReport(sessions[index]);
+                }
+            }
+        };
+
+        list.addEventListener('click', this._clickHandler);
+        list.addEventListener('keydown', this._keyHandler);
+    }
+
+    static showDetailedReport(session) {
+        // Create or show detailed report modal
+        let modal = document.getElementById('sessionDetailModal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.id = 'sessionDetailModal';
+            modal.className = 'modal';
+            modal.setAttribute('aria-hidden', 'true');
+            modal.setAttribute('role', 'dialog');
+            modal.setAttribute('aria-label', 'Детальный отчет сессии');
+            document.body.appendChild(modal);
+        }
+
+        const date = new Date(session.date);
+        const dateStr = date.toLocaleDateString('ru-RU', {
+            day: 'numeric',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        const minutes = Math.floor(session.time / 60);
+        const seconds = session.time % 60;
+        const timeStr = `${minutes}м ${seconds}с`;
+
+        const taskResultsHtml = session.taskResults && session.taskResults.length > 0
+            ? session.taskResults.map((task, idx) => {
+                const statusIcon = task.isCorrect ? '✅' : '❌';
+                const typeLabel = {
+                    'mcq': 'Тест',
+                    'line': 'Поиск строки',
+                    'auction': 'Аукцион',
+                    'flowchart': 'Блок-схема',
+                    'matching': 'Соответствие'
+                }[task.type] || task.type;
+
+                return `
+                <div class="detail-task ${task.isCorrect ? 'task-correct' : 'task-incorrect'}">
+                    <div class="detail-task-header">
+                        <span class="detail-task-number">#${idx + 1}</span>
+                        <span class="detail-task-status">${statusIcon}</span>
+                    </div>
+                    <div class="detail-task-content">
+                        <div class="detail-task-title">${escapeHtml(task.title)}</div>
+                        <div class="detail-task-meta">
+                            <span class="task-type-badge">${typeLabel}</span>
+                            ${task.vulnType ? `<span class="task-vuln-type">${escapeHtml(task.vulnType)}</span>` : ''}
+                        </div>
+                        ${task.userAnswer !== null ? `
+                        <div class="detail-task-answer">
+                            <strong>Ваш ответ:</strong> ${escapeHtml(String(task.userAnswer))}
+                        </div>
+                        ` : ''}
+                        ${task.hintsUsed > 0 ? `<div class="detail-task-hints">💡 Использовано подсказок: ${task.hintsUsed}</div>` : ''}
+                    </div>
+                </div>
+            `}).join('')
+            : '<p style="text-align: center; color: var(--md-sys-color-on-surface-variant);">Детализация заданий недоступна для этой сессии</p>';
+
+        modal.innerHTML = `
+            <div class="modal-backdrop" id="sessionDetailBackdrop"></div>
+            <div class="modal-panel session-detail-panel card" role="document">
+                <div class="detail-header">
+                    <div>
+                        <h2 class="panel-title">📋 Детальный отчет</h2>
+                        <div class="detail-subtitle">${dateStr}</div>
+                    </div>
+                    <button class="close-btn" id="sessionDetailClose">&times;</button>
+                </div>
+
+                <div class="detail-content">
+                    <div class="detail-summary">
+                        <div class="summary-stat">
+                            <div class="summary-icon">${session.levelIcon || '📊'}</div>
+                            <div class="summary-value">${session.cyberLevel || 'Неизвестно'}</div>
+                            <div class="summary-label">Уровень</div>
+                        </div>
+                        <div class="summary-stat">
+                            <div class="summary-icon">🎯</div>
+                            <div class="summary-value">${session.accuracy}%</div>
+                            <div class="summary-label">Точность</div>
+                        </div>
+                        <div class="summary-stat">
+                            <div class="summary-icon">💯</div>
+                            <div class="summary-value">${session.score}</div>
+                            <div class="summary-label">Очки</div>
+                        </div>
+                        <div class="summary-stat">
+                            <div class="summary-icon">✓</div>
+                            <div class="summary-value">${session.correct}/${session.total}</div>
+                            <div class="summary-label">Верно</div>
+                        </div>
+                        <div class="summary-stat">
+                            <div class="summary-icon">⏱️</div>
+                            <div class="summary-value">${timeStr}</div>
+                            <div class="summary-label">Время</div>
+                        </div>
+                        <div class="summary-stat">
+                            <div class="summary-icon">💡</div>
+                            <div class="summary-value">${session.hintsUsed}</div>
+                            <div class="summary-label">Подсказки</div>
+                        </div>
+                        <div class="summary-stat">
+                            <div class="summary-icon">⭐</div>
+                            <div class="summary-value">${session.perfectStreak || 0}</div>
+                            <div class="summary-label">Серия</div>
+                        </div>
+                        ${session.compositeScore !== undefined ? `
+                        <div class="summary-stat">
+                            <div class="summary-icon">📈</div>
+                            <div class="summary-value">${session.compositeScore}/100</div>
+                            <div class="summary-label">Композитный счёт</div>
+                        </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="detail-tasks-section">
+                        <h3 class="detail-section-title">📝 Результаты по заданиям</h3>
+                        <div class="detail-tasks-list">
+                            ${taskResultsHtml}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="detail-footer">
+                    <button class="soft-btn" id="sessionDetailCloseBtn">Закрыть</button>
+                </div>
+            </div>
+        `;
+
+        // Show modal
+        modal.classList.add('show');
+        modal.setAttribute('aria-hidden', 'false');
+
+        // Close handlers
+        const closeModal = () => {
+            modal.classList.remove('show');
+            modal.setAttribute('aria-hidden', 'true');
+        };
+
+        document.getElementById('sessionDetailClose')?.addEventListener('click', closeModal);
+        document.getElementById('sessionDetailCloseBtn')?.addEventListener('click', closeModal);
+        document.getElementById('sessionDetailBackdrop')?.addEventListener('click', closeModal);
+
+        // Close on Escape
+        const escapeHandler = (e) => {
+            if (e.key === 'Escape') {
+                closeModal();
+                document.removeEventListener('keydown', escapeHandler);
+            }
+        };
+        document.addEventListener('keydown', escapeHandler);
     }
 }
 
@@ -442,7 +645,7 @@ const GameState = {
 
     reset() {
         const alwaysTasks = allTasks.filter(t => t.always);
-        const auctionTasks = shuffleArray([...allTasks.filter(t => t.mode === 'auction')]).slice(0, 2);
+        const auctionTasks = shuffleArray([...allTasks.filter(t => t.mode === 'auction')]).slice(0, 1);
         const flowchartTasks = shuffleArray([...allTasks.filter(t => t.mode === 'flowchart')]).slice(0, 1);
         const otherTasks = allTasks.filter(t => !t.always && t.mode !== 'auction' && t.mode !== 'flowchart');
         const remainingSlots = Math.max(0, 10 - alwaysTasks.length - auctionTasks.length - flowchartTasks.length);
@@ -993,6 +1196,23 @@ const TaskRenderer = {
         if (isCorrect || totalPlaced === task.zones.length) {
             GameState.answered = true;
 
+            // Disable dragging on all placed blocks
+            container.querySelectorAll('.flowchart-block').forEach(block => {
+                block.draggable = false;
+                block.style.cursor = 'default';
+                block.style.opacity = '0.8';
+            });
+
+            // Disable pool blocks too
+            const pool = container.querySelector('#blocksPool');
+            if (pool) {
+                pool.querySelectorAll('.flowchart-block').forEach(block => {
+                    block.draggable = false;
+                    block.style.cursor = 'not-allowed';
+                    block.style.opacity = '0.5';
+                });
+            }
+
             if (isCorrect) {
                 GameState.correctCount++;
                 const points = GameState.calculatePoints(GameState.currentHints || 0);
@@ -1159,8 +1379,13 @@ const TaskRenderer = {
         let correctSelected = 0;
         let wrongSelected = 0;
         let correctMissed = 0;
+        let wrongSpent = 0;
 
         const cards = container.querySelectorAll('.auction-card');
+        const selectedMeasures = [];
+        const missedMeasures = [];
+        const wrongMeasures = [];
+
         cards.forEach((card, idx) => {
             const isSelected = card.classList.contains('selected');
             const isCorrect = card.dataset.correct === 'true';
@@ -1168,38 +1393,78 @@ const TaskRenderer = {
             if (isSelected && isCorrect) {
                 card.classList.add('result-correct');
                 correctSelected++;
+                selectedMeasures.push(measureMap[idx]);
             } else if (isSelected && !isCorrect) {
                 card.classList.add('result-wrong');
                 wrongSelected++;
+                wrongSpent += measureMap[idx].cost;
+                wrongMeasures.push(measureMap[idx]);
             } else if (!isSelected && isCorrect) {
                 card.classList.add('result-missed');
                 correctMissed++;
+                missedMeasures.push(measureMap[idx]);
             }
         });
 
-        // Score calculation
+        // Score calculation - more nuanced
         const totalCorrect = measureMap.filter(m => m.correct).length;
-        const finalScore = Math.max(0, (correctSelected * 10) - (wrongSelected * 5));
+        const efficiencyRatio = totalCorrect > 0 ? correctSelected / totalCorrect : 0;
+        const wasteRatio = selected.length > 0 ? wrongSelected / selected.length : 0;
+        const budgetEfficiency = spent > 0 ? (spent - wrongSpent) / spent : 0;
 
-        // Determine result level
+        // Base score for correct answers
+        const baseScore = correctSelected * 10;
+        // Bonus for efficiency (no waste)
+        const efficiencyBonus = wasteRatio === 0 && correctSelected > 0 ? Math.round(baseScore * 0.3) : 0;
+        // Bonus for budget management (spent wisely)
+        const budgetBonus = budgetEfficiency > 0.7 ? Math.round(baseScore * 0.2) : 0;
+        // Penalty for wrong choices
+        const wrongPenalty = wrongSelected * 5;
+        // Penalty for missed critical measures
+        const missedPenalty = correctMissed * 3;
+
+        const finalScore = Math.max(0, baseScore + efficiencyBonus + budgetBonus - wrongPenalty - missedPenalty);
+
+        // Determine result level - more granular
         let resultLevel, resultIcon, resultText;
-        if (correctSelected >= totalCorrect && wrongSelected === 0) {
-            resultLevel = 'excellent';
+        const correctnessPercent = totalCorrect > 0 ? correctSelected / totalCorrect : 0;
+
+        if (correctnessPercent === 1 && wrongSelected === 0 && spent <= budget * 0.5) {
+            resultLevel = 'perfect';
             resultIcon = '🏆';
-            resultText = 'Идеально! Вы выбрали все нужные меры и не потратили лишнего!';
-        } else if (correctSelected >= totalCorrect * 0.7 && wrongSelected <= 1) {
+            resultText = 'Безупречно! Идеальный баланс защиты и экономии!';
+        } else if (correctnessPercent === 1 && wrongSelected === 0) {
+            resultLevel = 'excellent';
+            resultIcon = '🎯';
+            resultText = 'Отлично! Вы выбрали все нужные меры без лишних трат!';
+        } else if (correctnessPercent >= 0.8 && wrongSelected === 0) {
+            resultLevel = 'very-good';
+            resultIcon = '👏';
+            resultText = 'Очень хорошо! Почти все верно, но что-то упустили.';
+        } else if (correctnessPercent >= 0.7 && wrongSelected <= 1) {
             resultLevel = 'good';
             resultIcon = '👍';
-            resultText = 'Хороший результат! Почти всё верно.';
-        } else if (correctSelected >= totalCorrect * 0.5) {
-            resultLevel = 'ok';
+            resultText = 'Хороший результат! Но есть куда расти.';
+        } else if (correctnessPercent >= 0.5 && wrongSelected <= 2) {
+            resultLevel = 'average';
             resultIcon = '🤔';
-            resultText = 'Неплохо, но можно лучше. Посмотрите, что вы упустили.';
+            resultText = 'Неплохо, но много лишнего. Посмотрите на ошибки.';
+        } else if (correctnessPercent >= 0.4) {
+            resultLevel = 'below-average';
+            resultIcon = '😐';
+            resultText = 'Слабовато. Нужно лучше разбираться в защите.';
         } else {
             resultLevel = 'poor';
             resultIcon = '😟';
-            resultText = 'Нужно лучше изучить меры защиты. Попробуйте ещё раз!';
+            resultText = 'Плохой результат. Изучите меры защиты и попробуйте снова!';
         }
+
+        // Add budget feedback
+        const budgetFeedback = spent > budget * 0.8
+            ? `⚠️ Вы потратили ${Math.round((spent/budget)*100)}% бюджета!`
+            : spent < budget * 0.3 && correctnessPercent < 1
+                ? `💡 Можно было выбрать больше мер защиты.`
+                : '✅ Бюджет использован разумно.';
 
         const result = container.querySelector('#auctionResult');
         result.classList.remove('hidden');
@@ -1207,6 +1472,7 @@ const TaskRenderer = {
             <div class="auction-result-content ${resultLevel}">
                 <div class="result-icon">${resultIcon}</div>
                 <div class="result-title">${resultText}</div>
+                <div class="result-budget-feedback">${budgetFeedback}</div>
                 <div class="result-stats">
                     <div class="stat">
                         <span class="stat-label">Верных мер</span>
@@ -1221,18 +1487,42 @@ const TaskRenderer = {
                         <span class="stat-value warn">${correctMissed}</span>
                     </div>
                     <div class="stat">
-                        <span class="stat-label">Потрачено</span>
+                        <span class="stat-label">Потрачено впустую</span>
+                        <span class="stat-value bad">${wrongSpent > 0 ? wrongSpent.toLocaleString('ru-RU') + ' ₽' : '0 ₽'}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Потрачено всего</span>
                         <span class="stat-value">${spent.toLocaleString('ru-RU')}/${budget.toLocaleString('ru-RU')} ₽</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Эффективность</span>
+                        <span class="stat-value primary">${Math.round(efficiencyRatio * 100)}%</span>
                     </div>
                     <div class="stat">
                         <span class="stat-label">Очки</span>
                         <span class="stat-value primary">+${finalScore}</span>
                     </div>
                 </div>
-                <div class="result-hints">
-                    <strong>Правильные меры защиты:</strong>
+                ${wrongMeasures.length > 0 ? `
+                <div class="result-hints wrong-hints">
+                    <strong>❌ Лишние меры (не стоит выбирать):</strong>
                     <ul>
-                        ${measureMap.filter(m => m.correct).map(m => `<li>${m.icon || '🛡️'} ${m.name} (${m.cost.toLocaleString('ru-RU')} ₽)</li>`).join('')}
+                        ${wrongMeasures.map(m => `<li>${m.icon || '❌'} ${m.name} (${m.cost.toLocaleString('ru-RU')} ₽)</li>`).join('')}
+                    </ul>
+                </div>
+                ` : ''}
+                ${missedMeasures.length > 0 ? `
+                <div class="result-hints missed-hints">
+                    <strong>⚠️ Пропущенные меры защиты (надо было выбрать):</strong>
+                    <ul>
+                        ${missedMeasures.map(m => `<li>${m.icon || '⚠️'} ${m.name} (${m.cost.toLocaleString('ru-RU')} ₽)</li>`).join('')}
+                    </ul>
+                </div>
+                ` : ''}
+                <div class="result-hints correct-hints">
+                    <strong>✅ Правильные меры защиты:</strong>
+                    <ul>
+                        ${measureMap.filter(m => m.correct).map(m => `<li>${m.icon || '✅'} ${m.name} (${m.cost.toLocaleString('ru-RU')} ₽)</li>`).join('')}
                     </ul>
                 </div>
             </div>
@@ -1245,11 +1535,11 @@ const TaskRenderer = {
         if (isCorrect) {
             GameState.correctCount++;
             const points = GameState.calculatePoints(GameState.currentHints || 0);
-            GameState.score += points;
+            GameState.score += points + Math.round(finalScore * 0.5);
             if ((GameState.currentHints || 0) === 0) GameState.perfectStreak++;
-            UI.logConsole(`✅ Аукцион пройден! +${points} очков`);
+            UI.logConsole(`✅ Аукцион пройден! +${points + Math.round(finalScore * 0.5)} очков`);
         } else {
-            UI.logConsole(`❌ Аукцион: ${correctSelected}/${totalCorrect} верных мер`);
+            UI.logConsole(`❌ Аукцион: ${correctSelected}/${totalCorrect} верных мер, ${wrongSelected} лишних`);
         }
 
         container.querySelector('#auctionCheckBtn').disabled = true;
@@ -1262,6 +1552,7 @@ const TaskRenderer = {
 
     renderMatching(task, container) {
         container.classList.add('active');
+        GameState.currentTaskData = { selectedScenario: undefined, mappings: {} };
 
         let scenariosHtml = '<div class="matching-scenarios">';
         task.scenarios.forEach((scenario, idx) => {
@@ -1269,6 +1560,7 @@ const TaskRenderer = {
                 <div class="matching-scenario" data-scenario="${idx}">
                     <span class="matching-scenario-letter">${String.fromCharCode(65 + idx)}</span>
                     <span class="matching-scenario-text">${escapeHtml(scenario.text)}</span>
+                    <span class="matching-scenario-answer-label" id="scenarioLabel${idx}"></span>
                 </div>
             `;
         });
@@ -1287,24 +1579,76 @@ const TaskRenderer = {
 
         container.innerHTML = `
             <div class="matching-container">
-                <p class="task-question">Установите соответствие между ситуациями и угрозами:</p>
+                <p class="task-question">Установите соответствие между ситуациями и ответами:</p>
                 ${scenariosHtml}
                 ${answersHtml}
+                <div class="matching-actions" style="margin-top: 16px; display: flex; gap: 12px;">
+                    <button class="soft-btn primary" id="matchingCheckBtn" disabled>✓ Проверить</button>
+                    <button class="soft-btn" id="matchingResetBtn">↺ Сбросить</button>
+                </div>
+                <div class="matching-result hidden" id="matchingResult"></div>
             </div>
         `;
 
+        const updateCheckBtn = () => {
+            const btn = container.querySelector('#matchingCheckBtn');
+            if (btn) {
+                const totalMapped = Object.keys(GameState.currentTaskData.mappings).length;
+                btn.disabled = totalMapped < task.scenarios.length;
+            }
+        };
+
+        const renderMappings = () => {
+            // Reset all answer buttons
+            container.querySelectorAll('.matching-answer-btn').forEach(btn => {
+                btn.classList.remove('selected', 'correct', 'incorrect');
+                btn.style.opacity = '1';
+            });
+
+            // Reset all scenario labels
+            task.scenarios.forEach((_, idx) => {
+                const label = container.querySelector(`#scenarioLabel${idx}`);
+                if (label) label.textContent = '';
+                const scenarioEl = container.querySelector(`[data-scenario="${idx}"]`);
+                if (scenarioEl) {
+                    scenarioEl.classList.remove('correct', 'incorrect', 'has-answer');
+                }
+            });
+
+            // Mark used answers and show labels
+            Object.entries(GameState.currentTaskData.mappings).forEach(([scenarioIdx, answerIdx]) => {
+                const answerBtn = container.querySelector(`.matching-answer-btn[data-answer="${answerIdx}"]`);
+                if (answerBtn) {
+                    answerBtn.classList.add('selected');
+                    answerBtn.style.opacity = '0.5';
+                }
+
+                const scenarioEl = container.querySelector(`[data-scenario="${scenarioIdx}"]`);
+                if (scenarioEl) {
+                    scenarioEl.classList.add('has-answer');
+                }
+
+                const label = container.querySelector(`#scenarioLabel${scenarioIdx}`);
+                if (label) {
+                    label.textContent = `→ ${task.answers[answerIdx].text.substring(0, 30)}...`;
+                    label.style.cssText = 'font-size: 11px; color: var(--md-sys-color-on-surface-variant); margin-top: 4px; display: block;';
+                }
+            });
+
+            updateCheckBtn();
+        };
+
+        // Scenario selection
         container.querySelectorAll('.matching-scenario').forEach(scenarioEl => {
             scenarioEl.addEventListener('click', () => {
                 if (GameState.answered) return;
-
                 container.querySelectorAll('.matching-scenario').forEach(s => s.classList.remove('selected'));
                 scenarioEl.classList.add('selected');
-
-                const scenarioIdx = parseInt(scenarioEl.dataset.scenario);
-                GameState.currentTaskData.selectedScenario = scenarioIdx;
+                GameState.currentTaskData.selectedScenario = parseInt(scenarioEl.dataset.scenario);
             });
         });
 
+        // Answer selection
         container.querySelectorAll('.matching-answer-btn').forEach(answerEl => {
             answerEl.addEventListener('click', () => {
                 if (GameState.answered) return;
@@ -1314,44 +1658,78 @@ const TaskRenderer = {
 
                 const answerIdx = parseInt(answerEl.dataset.answer);
 
-                const scenarioEl = container.querySelector(`[data-scenario="${scenarioIdx}"]`);
-
-                const correctAnswer = task.scenarios[scenarioIdx].correctAnswer;
-                const isCorrect = answerIdx === correctAnswer;
-
-                scenarioEl.classList.add(isCorrect ? 'correct' : 'incorrect');
-                answerEl.classList.add(isCorrect ? 'correct' : 'incorrect');
-
-                GameState.currentTaskData[`scenario_${scenarioIdx}`] = answerIdx;
-
-                const allAnswered = task.scenarios.every((_, idx) =>
-                    GameState.currentTaskData[`scenario_${idx}`] !== undefined
+                // Check if this answer is already used by another scenario
+                const existingScenario = Object.entries(GameState.currentTaskData.mappings).find(
+                    ([sIdx, aIdx]) => aIdx === answerIdx && parseInt(sIdx) !== scenarioIdx
                 );
 
-                if (allAnswered) {
-                    this.checkMatchingAnswer(task);
+                if (existingScenario) {
+                    // Remove the old mapping first
+                    delete GameState.currentTaskData.mappings[existingScenario[0]];
                 }
+
+                // If this scenario already has an answer, remove it
+                if (GameState.currentTaskData.mappings[scenarioIdx] !== undefined) {
+                    delete GameState.currentTaskData.mappings[scenarioIdx];
+                }
+
+                // Add new mapping
+                GameState.currentTaskData.mappings[scenarioIdx] = answerIdx;
+                GameState.currentTaskData.selectedScenario = undefined;
+                container.querySelectorAll('.matching-scenario').forEach(s => s.classList.remove('selected'));
+
+                renderMappings();
             });
+        });
+
+        // Reset button
+        container.querySelector('#matchingResetBtn').addEventListener('click', () => {
+            if (GameState.answered) return;
+            GameState.currentTaskData.mappings = {};
+            GameState.currentTaskData.selectedScenario = undefined;
+            container.querySelectorAll('.matching-scenario').forEach(s => s.classList.remove('selected', 'correct', 'incorrect', 'has-answer'));
+            const result = container.querySelector('#matchingResult');
+            result.classList.add('hidden');
+            result.innerHTML = '';
+            renderMappings();
+        });
+
+        // Check button
+        container.querySelector('#matchingCheckBtn').addEventListener('click', () => {
+            if (GameState.answered) return;
+            this.checkMatchingAnswer(task, container);
         });
     },
 
-    updateMatchingState(task) {
-        // Reset answers when new scenario selected
-    },
-
-    checkMatchingAnswer(task) {
+    checkMatchingAnswer(task, container) {
+        const mappings = GameState.currentTaskData.mappings;
         let correctCount = 0;
 
         task.scenarios.forEach((scenario, idx) => {
-            const scenarioEl = document.querySelector(`[data-scenario="${idx}"]`);
-            const userAnswer = GameState.currentTaskData[`scenario_${idx}`];
+            const scenarioEl = container.querySelector(`[data-scenario="${idx}"]`);
+            const userAnswer = mappings[idx];
 
             if (userAnswer === scenario.correctAnswer) {
+                scenarioEl.classList.add('correct');
+                scenarioEl.classList.remove('incorrect');
                 correctCount++;
+            } else {
+                scenarioEl.classList.add('incorrect');
+                scenarioEl.classList.remove('correct');
             }
         });
 
         const isCorrect = correctCount === task.scenarios.length;
+
+        // Show result
+        const result = container.querySelector('#matchingResult');
+        result.classList.remove('hidden');
+        result.innerHTML = `
+            <div style="padding: 12px; border-radius: 10px; text-align: center; font-weight: 600; ${isCorrect ? 'background: rgba(16, 185, 129, 0.1); color: #059669;' : 'background: rgba(220, 38, 38, 0.1); color: #dc2626;'}">
+                ${isCorrect ? '✅ Все верно!' : `🤔 Верно ${correctCount} из ${task.scenarios.length}`}
+            </div>
+        `;
+
         this.showFeedback(task, isCorrect);
         GameState.answered = true;
 
@@ -1360,14 +1738,13 @@ const TaskRenderer = {
             const points = GameState.calculatePoints(GameState.currentHints || 0);
             GameState.score += points;
             if ((GameState.currentHints || 0) === 0) GameState.perfectStreak++;
-            UI.logConsole(`✅ Верно! +${points} очков`);
+            UI.logConsole(`✅ Соответствие верное! +${points} очков`);
         } else {
-            const correctAnswers = task.scenarios.map((s, i) =>
-                `${String.fromCharCode(65 + i)} → ${s.correctAnswer + 1}`
-            ).join(', ');
-            UI.logConsole(`❌ Неверно. Правильные: ${correctAnswers}`);
+            UI.logConsole(`❌ Соответствие: ${correctCount}/${task.scenarios.length} верных`);
         }
 
+        container.querySelector('#matchingCheckBtn').disabled = true;
+        container.querySelector('#matchingResetBtn').disabled = true;
         UI.get('nextBtn').disabled = false;
         UI.get('hintBtn1').disabled = true;
         UI.get('hintBtn2').disabled = true;
@@ -1583,51 +1960,145 @@ const ResultScreen = {
         const { gameView, resultView } = UI.elements;
         const total = GameState.deck.length;
         const accuracy = Math.round((GameState.correctCount / total) * 100);
+        const timeSpent = GameState.startTime ? Math.round((Date.now() - GameState.startTime) / 1000) : 0;
+        const avgTimePerQuestion = total > 0 ? timeSpent / total : 0;
 
-        // Save session to history (completed)
+        // Calculate advanced metrics
+        const hintPenalty = GameState.hintsUsed * 5;
+        const streakBonus = GameState.perfectStreak * 3;
+        const timeEfficiency = avgTimePerQuestion < 30 ? 10 : (avgTimePerQuestion < 60 ? 5 : 0);
+        const finalScore = Math.max(0, GameState.score + streakBonus - hintPenalty + timeEfficiency);
+
+        // Calculate "cyber level" based on multiple factors
+        let cyberLevel, levelIcon, levelDesc, levelColor;
+
+        // Factors: accuracy, hints, streak, speed
+        const accuracyWeight = accuracy * 0.5;
+        const noHintsBonus = GameState.hintsUsed === 0 ? 20 : (GameState.hintsUsed <= 2 ? 10 : 0);
+        const streakMultiplier = Math.min(GameState.perfectStreak / 5, 1);
+        const speedBonus = avgTimePerQuestion < 40 ? 15 : (avgTimePerQuestion < 70 ? 8 : 0);
+        const compositeScore = accuracyWeight + noHintsBonus + (streakMultiplier * 10) + speedBonus;
+
+        if (compositeScore >= 85 && accuracy >= 95 && GameState.hintsUsed === 0) {
+            cyberLevel = 'Легенда кибербезопасности';
+            levelIcon = '👑';
+            levelColor = '#ffd700';
+            levelDesc = 'Невероятный результат! Вы — настоящий эксперт в области ИБ. Ваш уровень знаний поражает!';
+        } else if (compositeScore >= 75 && accuracy >= 90) {
+            cyberLevel = 'Мастер защиты';
+            levelIcon = '🏆';
+            levelColor = '#ff9800';
+            levelDesc = 'Высочайший уровень! Вы отлично разбираетесь в кибербезопасности и можете обучать других.';
+        } else if (compositeScore >= 65 && accuracy >= 85) {
+            cyberLevel = 'Эксперт по безопасности';
+            levelIcon = '️';
+            levelColor = '#4caf50';
+            levelDesc = 'Впечатляющий результат! Вы уверенно определяете уязвимости и знаете методы защиты.';
+        } else if (compositeScore >= 55 && accuracy >= 75) {
+            cyberLevel = 'Продвинутый специалист';
+            levelIcon = '💪';
+            levelColor = '#8bc34a';
+            levelDesc = 'Отличная работа! У вас хорошие знания в области ИБ. Продолжайте совершенствоваться!';
+        } else if (compositeScore >= 45 && accuracy >= 65) {
+            cyberLevel = 'Защитник сети';
+            levelIcon = '🔒';
+            levelColor = '#2196f3';
+            levelDesc = 'Хороший результат! Вы понимаете основы безопасности, но есть куда расти.';
+        } else if (compositeScore >= 35 && accuracy >= 55) {
+            cyberLevel = 'Начинающий аналитик';
+            levelIcon = '🔍';
+            levelColor = '#03a9f4';
+            levelDesc = 'Неплохо! Вы на правильном пути. Практика и изучение материалов сделают вас лучше.';
+        } else if (compositeScore >= 25 && accuracy >= 45) {
+            cyberLevel = 'Ученик по безопасности';
+            levelIcon = '📚';
+            levelColor = '#00bcd4';
+            levelDesc = 'Вы делаете первые шаги в мире ИБ. Не сдавайтесь, каждое задание — это опыт!';
+        } else if (accuracy >= 30) {
+            cyberLevel = 'Исследователь угроз';
+            levelIcon = '🎓';
+            levelColor = '#9c27b0';
+            levelDesc = 'Вы только начинаете свой путь. Изучите материалы по кибербезопасности и попробуйте снова!';
+        } else {
+            cyberLevel = 'Новичок в защите';
+            levelIcon = '🌱';
+            levelColor = '#795548';
+            levelDesc = 'Не расстраивайтесь! Все эксперты когда-то были новичками. Изучите основы и возвращайтесь!';
+        }
+
+        // Save session to history (completed) with enhanced data
         SessionHistory.save({
             date: new Date().toISOString(),
-            score: GameState.score,
+            score: finalScore,
             correct: GameState.correctCount,
             total: total,
             accuracy: accuracy,
             hintsUsed: GameState.hintsUsed,
             perfectStreak: GameState.perfectStreak,
-            time: GameState.startTime ? Math.round((Date.now() - GameState.startTime) / 1000) : 0,
-            status: 'completed'
+            time: timeSpent,
+            avgTimePerQuestion: Math.round(avgTimePerQuestion),
+            cyberLevel: cyberLevel,
+            levelIcon: levelIcon,
+            compositeScore: Math.round(compositeScore),
+            status: 'completed',
+            taskResults: GameState.deck.map((task, idx) => ({
+                title: task.title,
+                type: task.mode,
+                vulnType: task.vulnType,
+                // This will be filled during gameplay
+                userAnswer: task._userAnswer || null,
+                isCorrect: task._isCorrect || false,
+                hintsUsed: task._hintsUsed || 0
+            }))
         });
 
         // Hide game, show result
         gameView.classList.add('hidden');
         resultView.classList.remove('hidden');
 
-        // Calculate level
-        let level = 'Новичок';
-        let levelDesc = 'Хорошее начало! Продолжай изучать основы ИБ.';
-
-        if (accuracy >= 90 && GameState.hintsUsed <= 2) {
-            level = 'Эксперт 🔐';
-            levelDesc = 'Впечатляющий результат! Вы отлично разбираетесь в кибербезопасности.';
-        } else if (accuracy >= 70) {
-            level = 'Продвинутый 🛡️';
-            levelDesc = 'Отличная работа! Вы уверенно определяете уязвимости.';
-        } else if (accuracy >= 50) {
-            level = 'Развивающийся 🔍';
-            levelDesc = 'Вы на правильном пути! Практика сделает вас ещё лучше.';
-        }
-
-        // Update result content
-        UI.get('resultLevel').textContent = level;
+        // Update result content with new detailed stats
+        UI.get('resultLevel').innerHTML = `${levelIcon} ${cyberLevel}`;
+        UI.get('resultLevel').style.color = levelColor;
         UI.get('resultText').textContent = levelDesc;
-        UI.get('finalScore').textContent = GameState.score;
+        UI.get('finalScore').textContent = finalScore;
         UI.get('finalCorrect').textContent = `${GameState.correctCount}/${total}`;
         UI.get('finalPerfect').textContent = GameState.perfectStreak;
         UI.get('finalPercent').textContent = `${accuracy}%`;
 
+        // Add detailed stats section
+        const resultGrid = resultView.querySelector('.result-grid');
+        const existingDetailed = resultGrid.querySelector('.result-detailed-stats');
+        if (existingDetailed) existingDetailed.remove();
+
+        const detailedStats = document.createElement('div');
+        detailedStats.className = 'result-stat result-detailed-stats';
+        detailedStats.style.gridColumn = '1 / -1';
+        detailedStats.innerHTML = `
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: var(--md-sys-spacing-2); margin-top: var(--md-sys-spacing-2);">
+                <div class="detailed-stat">
+                    <span class="stat-label">⏱️ Среднее время</span>
+                    <strong>${Math.round(avgTimePerQuestion)}с/вопрос</strong>
+                </div>
+                <div class="detailed-stat">
+                    <span class="stat-label">💡 Подсказки</span>
+                    <strong>${GameState.hintsUsed}</strong>
+                </div>
+                <div class="detailed-stat">
+                    <span class="stat-label">⭐ Серия без подсказок</span>
+                    <strong>${GameState.perfectStreak}</strong>
+                </div>
+                <div class="detailed-stat">
+                    <span class="stat-label">📊 Композитный счёт</span>
+                    <strong>${Math.round(compositeScore)}/100</strong>
+                </div>
+            </div>
+        `;
+        resultGrid.appendChild(detailedStats);
+
         // Stop timer
         GameState.clearTimer();
 
-        UI.logConsole(`🏁 Сессия завершена! Результат: ${accuracy}%`);
+        UI.logConsole(`🏁 Сессия завершена! Результат: ${accuracy}%, уровень: ${cyberLevel}`);
     }
 };
 
@@ -1781,6 +2252,7 @@ function setupEventListeners() {
 
     historyBtn?.addEventListener('click', () => {
         SessionHistory.render();
+        SessionHistory.initClickHandlers();
         historyModal.classList.add('show');
         historyModal.setAttribute('aria-hidden', 'false');
     });
@@ -2424,6 +2896,216 @@ const allTasks = [
         hint1: '"Выигрыш", в котором не участвовал = приманка',
         hint2: 'Просьба пароля = социальная инженерия',
         explanation: '"Выигрыш" = Фишинг. Просьба пароля = Социальная инженерия. Фейковый антивирус = Вирус.'
+    },
+    // ===== NEW AUCTION TASKS (3 variants) =====
+    {
+        title: 'Аукцион: Защита электронной почты',
+        question: 'Выберите меры защиты для email аккаунта в рамках бюджета',
+        mode: 'auction',
+        vulnType: 'Безопасность email',
+        scenario: '📧 У вас важный рабочий email с конфиденциальной перепиской. Как его защитите? Бюджет — 1 000 000 ₽.',
+        budget: 1000000,
+        always: false,
+        measures: [
+            { name: 'Двухфакторная аутентификация', cost: 30000, correct: true, icon: '🔑', description: 'Дополнительный код при входе в почту' },
+            { name: 'Сложный уникальный пароль', cost: 15000, correct: true, icon: '🔐', description: 'Генератор надежных паролей' },
+            { name: 'Шифрование писем (PGP)', cost: 80000, correct: true, icon: '🔒', description: 'Шифрование содержимого писем' },
+            { name: 'Антиспам-фильтр', cost: 60000, correct: true, icon: '🚫', description: 'Блокировка спама и фишинга' },
+            { name: 'Проверка вложений антивирусом', cost: 50000, correct: true, icon: '🛡️', description: 'Автоматическая проверка файлов' },
+            { name: 'Премиум тема оформления', cost: 120000, correct: false, icon: '🎨', description: 'Красивый дизайн, но не защита' },
+            { name: 'VIP статус в почте', cost: 200000, correct: false, icon: '⭐', description: 'Никаких привилегий в безопасности' },
+            { name: 'Расширенное хранилище', cost: 150000, correct: false, icon: '💾', description: 'Больше места, но не защита' },
+            { name: 'Автоответчик', cost: 40000, correct: false, icon: '🤖', description: 'Удобно, но не защищает' },
+            { name: 'Стикерпаки для подписи', cost: 25000, correct: false, icon: '🎭', description: 'Забавно, но бесполезно' },
+            { name: 'Платная доставка писем', cost: 180000, correct: false, icon: '✉️', description: 'Email и так мгновенный' },
+            { name: 'Золотой значок verified', cost: 250000, correct: false, icon: '🏅', description: 'Красиво, но не защищает' }
+        ],
+        hint1: 'Главные риски: взлом аккаунта, фишинговые письма, вредоносные вложения',
+        hint2: '2FA + пароль + шифрование + антиспам + проверка вложений = защита email',
+        explanation: 'Правильные меры: 2FA (30К) + Пароль (15К) + PGP (80К) + Антиспам (60К) + Антивирус (50К) = 235 000₽.'
+    },
+    {
+        title: 'Аукцион: Защита онлайн-школы',
+        question: 'Выберите меры защиты для платформы дистанционного обучения',
+        mode: 'auction',
+        vulnType: 'Защита данных',
+        scenario: '🎓 Вы администрируете онлайн-школу с данными учеников. Как защитите платформу? Бюджет — 1 000 000 ₽.',
+        budget: 1000000,
+        always: false,
+        measures: [
+            { name: 'SSL-сертификат', cost: 50000, correct: true, icon: '🔒', description: 'Шифрование данных на сайте' },
+            { name: 'Резервное копирование', cost: 80000, correct: true, icon: '💾', description: 'Бэкап данных учеников' },
+            { name: 'Защита от DDoS', cost: 120000, correct: true, icon: '🛡️', description: 'Защита от атак на сайт' },
+            { name: 'Контроль доступа (роли)', cost: 70000, correct: true, icon: '👥', description: 'Разные права для учителей и учеников' },
+            { name: 'Шифрование данных в базе', cost: 90000, correct: true, icon: '🔐', description: 'Защита персональных данных' },
+            { name: 'Красивый дизайн сайта', cost: 200000, correct: false, icon: '🎨', description: 'Визуал не защищает данные' },
+            { name: 'Рекламная кампания', cost: 300000, correct: false, icon: '📢', description: 'Маркетинг, а не безопасность' },
+            { name: 'Премиум хостинг', cost: 180000, correct: false, icon: '⚡', description: 'Скорость, но не защита' },
+            { name: 'Анимации на сайте', cost: 100000, correct: false, icon: '✨', description: 'Красиво, но не защищает' },
+            { name: 'Интеграция с соцсетями', cost: 150000, correct: false, icon: '📱', description: 'Удобно, но не защита' },
+            { name: 'Чат-бот поддержки', cost: 120000, correct: false, icon: '🤖', description: 'Помощь, но не безопасность' },
+            { name: 'Подарочные сертификаты', cost: 50000, correct: false, icon: '🎁', description: 'Маркетинг, не ИБ' }
+        ],
+        hint1: 'Главные риски: утечка данных, атаки на сайт, несанкционированный доступ',
+        hint2: 'SSL + бэкап + DDoS-защита + контроль доступа + шифрование = защита платформы',
+        explanation: 'Правильные меры: SSL (50К) + Бэкап (80К) + DDoS (120К) + Контроль (70К) + Шифрование (90К) = 410 000₽.'
+    },
+    {
+        title: 'Аукцион: Защита умного дома',
+        question: 'Выберите меры защиты для системы умного дома',
+        mode: 'auction',
+        vulnType: 'IoT безопасность',
+        scenario: '🏠 У вас умный дом с камерами, датчиками и замками. Как защитите от взлома? Бюджет — 1 000 000 ₽.',
+        budget: 1000000,
+        always: false,
+        measures: [
+            { name: 'Смена паролей по умолчанию', cost: 10000, correct: true, icon: '🔑', description: 'Обязательно сменить стандартные пароли' },
+            { name: 'Отдельная сеть для IoT', cost: 80000, correct: true, icon: '📡', description: 'Изоляция умных устройств' },
+            { name: 'Обновление прошивок', cost: 40000, correct: true, icon: '🔄', description: 'Закрытие уязвимостей в ПО' },
+            { name: 'Фаервол для умного дома', cost: 120000, correct: true, icon: '🔥', description: 'Контроль сетевого трафика' },
+            { name: 'VPN для удаленного доступа', cost: 90000, correct: true, icon: '🌐', description: 'Безопасное подключение извне' },
+            { name: 'Умная лампочка RGB', cost: 150000, correct: false, icon: '💡', description: 'Развлечение, не защита' },
+            { name: 'Голосовой помощник Premium', cost: 200000, correct: false, icon: '🎤', description: 'Удобство, но не ИБ' },
+            { name: 'Умный пылесос', cost: 180000, correct: false, icon: '🤖', description: 'Бытовая техника, не защита' },
+            { name: 'Дизайнерская панель', cost: 250000, correct: false, icon: '📱', description: 'Красиво, но не защищает' },
+            { name: 'Умные шторы', cost: 120000, correct: false, icon: '🪟', description: 'Комфорт, а не безопасность' },
+            { name: 'Подписка на музыку', cost: 60000, correct: false, icon: '🎵', description: 'Развлечение, не ИБ' },
+            { name: 'Умная колонка', cost: 100000, correct: false, icon: '🔊', description: 'Развлечения, не защита' }
+        ],
+        hint1: 'Главные риски: взлом камер, открытие замков, перехват данных устройств',
+        hint2: 'Пароли + изолированная сеть + обновления + фаервол + VPN = защита IoT',
+        explanation: 'Правильные меры: Пароли (10К) + Сеть (80К) + Обновления (40К) + Фаервол (120К) + VPN (90К) = 340 000₽.'
+    },
+    // ===== NEW FLOWCHART TASKS (3 variants) =====
+    {
+        title: 'Блок-схема: Шифрование данных',
+        question: 'Расположите этапы шифрования в правильном порядке',
+        mode: 'flowchart',
+        vulnType: 'Криптография',
+        proverb: 'Зашифруй данные — защити секреты!',
+        zones: [
+            { label: 'Шаг 1: Начало' },
+            { label: 'Шаг 2: Обработка' },
+            { label: 'Шаг 3: Защита' },
+            { label: 'Шаг 4: Результат' }
+        ],
+        blocks: [
+            { text: 'Вводим исходные данные', type: 'process', correctZone: '0' },
+            { text: 'Применяем алгоритм шифрования', type: 'process', correctZone: '1' },
+            { text: 'Передаем по защищенному каналу', type: 'process', correctZone: '2' },
+            { text: 'Получаем зашифрованный текст', type: 'process', correctZone: '3' }
+        ],
+        always: false,
+        hint1: 'Сначала данные, потом шифрование, потом передача, потом результат',
+        hint2: 'Порядок: ввод → шифрование → передача → результат',
+        explanation: 'Правильный порядок: ввод данных → шифрование → передача → зашифрованный результат.'
+    },
+    {
+        title: 'Блок-схема: Фишинговая атака',
+        question: 'Расположите этапы фишинговой атаки в правильном порядке',
+        mode: 'flowchart',
+        vulnType: 'Социальная инженерия',
+        proverb: 'Знай врага в лицо — распознай фишинг!',
+        zones: [
+            { label: 'Этап 1: Подготовка' },
+            { label: 'Этап 2: Приманка' },
+            { label: 'Этап 3: Обман' },
+            { label: 'Этап 4: Кража' }
+        ],
+        blocks: [
+            { text: 'Создание поддельного сайта', type: 'process', correctZone: '0' },
+            { text: 'Отправка письма с ссылкой', type: 'process', correctZone: '1' },
+            { text: 'Жертва вводит данные', type: 'process', correctZone: '2' },
+            { text: 'Злоумышленник получает данные', type: 'process', correctZone: '3' }
+        ],
+        always: false,
+        hint1: 'Сначала готовят сайт, потом заманивают, потом обманывают, потом крадут',
+        hint2: 'Порядок: подготовка сайта → письмо → ввод данных → кража',
+        explanation: 'Этапы фишинга: создание сайта → отправка письма → жертва вводит данные → кража данных.'
+    },
+    {
+        title: 'Блок-схема: Создание пароля',
+        question: 'Расположите шаги создания надежного пароля',
+        mode: 'flowchart',
+        vulnType: 'Аутентификация',
+        proverb: 'Крепкий пароль — крепкая защита!',
+        zones: [
+            { label: 'Шаг 1: Идея' },
+            { label: 'Шаг 2: Сложность' },
+            { label: 'Шаг 3: Проверка' },
+            { label: 'Шаг 4: Сохранение' }
+        ],
+        blocks: [
+            { text: 'Придумываем длинную фразу', type: 'process', correctZone: '0' },
+            { text: 'Добавляем цифры и символы', type: 'process', correctZone: '1' },
+            { text: 'Проверяем на надежность', type: 'process', correctZone: '2' },
+            { text: 'Сохраняем в менеджере паролей', type: 'process', correctZone: '3' }
+        ],
+        always: false,
+        hint1: 'Сначала фраза, потом усложняем, проверяем, сохраняем',
+        hint2: 'Порядок: фраза → цифры/символы → проверка → менеджер',
+        explanation: 'Создание пароля: придумать фразу → добавить спецсимволы → проверить → сохранить.'
+    },
+    // ===== NEW MATCHING TASKS (3 variants) =====
+    {
+        title: 'Соответствие: Виды вирусов',
+        question: 'Определите тип вредоносной программы по описанию',
+        mode: 'matching',
+        vulnType: 'Вредоносное ПО',
+        always: false,
+        scenarios: [
+            { text: 'Программа шифрует файлы и требует выкуп', correctAnswer: 2 },
+            { text: 'Скрытно записывает нажатия клавиш', correctAnswer: 0 },
+            { text: 'Показывает навязчивую рекламу в браузере', correctAnswer: 1 }
+        ],
+        answers: [
+            { text: 'Шпионское ПО (Keylogger)' },
+            { text: 'Adware (рекламное ПО)' },
+            { text: 'Программа-вымогатель (Ransomware)' }
+        ],
+        hint1: 'Шифрование файлов = вымогатель, запись клавиш = шпион, реклама = adware',
+        hint2: 'Ransomware шифрует, Keylogger записывает, Adware показывает рекламу',
+        explanation: 'Шифрование = Ransomware. Запись клавиш = Keylogger. Реклама = Adware.'
+    },
+    {
+        title: 'Соответствие: Типы атак',
+        question: 'Определите тип кибератаки по описанию',
+        mode: 'matching',
+        vulnType: 'Кибератаки',
+        always: false,
+        scenarios: [
+            { text: 'Сайт не открывается из-за миллиона запросов', correctAnswer: 1 },
+            { text: 'Поддельная точка Wi-Fi в кафе', correctAnswer: 2 },
+            { text: 'Программа незаметно устанавливается через другой файл', correctAnswer: 0 }
+        ],
+        answers: [
+            { text: 'Drive-by download (скрытая установка)' },
+            { text: 'DDoS-атака (перегрузка сервера)' },
+            { text: 'Evil Twin (злая двойная точка)' }
+        ],
+        hint1: 'Миллион запросов = DDoS, поддельный Wi-Fi = Evil Twin, скрытая установка = Drive-by',
+        hint2: 'DDoS перегружает, Evil Twin обманывает, Drive-by устанавливает',
+        explanation: 'Миллион запросов = DDoS. Поддельный Wi-Fi = Evil Twin. Скрытая установка = Drive-by.'
+    },
+    {
+        title: 'Соответствие: Методы защиты',
+        question: 'Соотнесите угрозу с методом защиты',
+        mode: 'matching',
+        vulnType: 'Защита информации',
+        always: false,
+        scenarios: [
+            { text: 'Защита от подбора паролей', correctAnswer: 2 },
+            { text: 'Защита от прослушивания сети', correctAnswer: 1 },
+            { text: 'Защита от вирусов в файлах', correctAnswer: 0 }
+        ],
+        answers: [
+            { text: 'Антивирус с проверкой в реальном времени' },
+            { text: 'VPN и шифрование трафика' },
+            { text: 'Двухфакторная аутентификация' }
+        ],
+        hint1: 'Подбор паролей → 2FA, прослушивание → VPN, вирусы → антивирус',
+        hint2: '2FA защищает аккаунт, VPN шифрует трафик, антивирус ловит вредоносные файлы',
+        explanation: 'Подбор паролей = 2FA. Прослушивание = VPN. Вирусы = Антивирус.'
     }
 ];
 
